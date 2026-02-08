@@ -4,17 +4,18 @@ import altair as alt
 import streamlit as st
 
 from src.analytics import apply_date_filter, daily_aggregation, kpi_snapshot, top_categories
-from src.theme import apply_brain_theme
+from src.theme import apply_brain_theme, render_sidebar_menu
 
 st.set_page_config(page_title="Analises", layout="wide")
 apply_brain_theme()
+render_sidebar_menu()
 
-st.title("2) Analises")
+st.title("Analises")
 st.caption("KPIs e visualizacoes para leitura rapida do dataset.")
 
 analysis_df = st.session_state.get("analysis_df")
 if analysis_df is None or analysis_df.empty:
-    st.warning("Nenhum dataset de analise disponivel. Va para `1_Upload` e salve o mapeamento.")
+    st.warning("Nenhum dataset de analise disponivel. Va para `Upload` e salve o mapeamento.")
     st.stop()
 
 work_df = analysis_df.copy()

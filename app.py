@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.theme import apply_brain_theme
+from src.theme import apply_brain_theme, render_sidebar_menu
 
 APP_NAME = "Atualizador de VGV"
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":bar_chart:")
 apply_brain_theme()
+render_sidebar_menu()
 
 st.title(APP_NAME)
 st.caption("Starter padrao Brain para apps Streamlit com upload de Excel e analises rapidas.")
@@ -18,7 +19,7 @@ st.markdown(
         <strong>Fluxo recomendado</strong><br/>
         1) Upload do Excel e mapeamento das colunas<br/>
         2) Analises de negocio com filtros e graficos<br/>
-        3) Qualidade dos dados e exportacao
+        3) Qualidade e exportacao de dados
     </div>
     """,
     unsafe_allow_html=True,
@@ -43,7 +44,7 @@ with left:
 with right:
     st.subheader("Pronto para analise")
     if analysis_df is None:
-        st.warning("Mapeie as colunas na pagina `1_Upload` para liberar analises.")
+        st.warning("Mapeie as colunas na pagina `Upload` para liberar analises.")
     else:
         st.success("Dataset de analise preparado.")
         st.write(f"- Linhas mapeadas: `{len(analysis_df):,}`".replace(",", "."))
@@ -52,16 +53,9 @@ with right:
 st.markdown(
     """
     <div class="brain-note">
-        Dica: para manter padrao entre apps da empresa, centralize qualquer ajuste visual em
-        <code>src/theme.py</code> e evite CSS espalhado por varias paginas.
+        Dica: para manter padrao entre apps da empresa, centralize ajustes visuais em
+        <code>src/theme.py</code>.
     </div>
     """,
     unsafe_allow_html=True,
 )
-
-with st.sidebar:
-    st.subheader("Menu")
-    st.page_link("app.py", label="Inicio")
-    st.page_link("pages/1_Upload.py", label="1) Upload")
-    st.page_link("pages/2_Analises.py", label="2) Analises")
-    st.page_link("pages/3_Qualidade.py", label="3) Qualidade")

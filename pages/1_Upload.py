@@ -9,12 +9,13 @@ from src.io_excel import (
     read_excel_file,
     suggest_default_map,
 )
-from src.theme import apply_brain_theme
+from src.theme import apply_brain_theme, render_sidebar_menu
 
 st.set_page_config(page_title="Upload", layout="wide")
 apply_brain_theme()
+render_sidebar_menu()
 
-st.title("1) Upload e mapeamento")
+st.title("Upload e mapeamento")
 st.caption("Suba o Excel e defina quais colunas serao usadas nas analises.")
 
 uploaded_file = st.file_uploader(

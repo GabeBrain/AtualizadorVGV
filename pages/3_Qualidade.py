@@ -6,17 +6,18 @@ import pandas as pd
 import streamlit as st
 
 from src.analytics import null_report
-from src.theme import apply_brain_theme
+from src.theme import apply_brain_theme, render_sidebar_menu
 
 st.set_page_config(page_title="Qualidade", layout="wide")
 apply_brain_theme()
+render_sidebar_menu()
 
-st.title("3) Qualidade e exportacao")
+st.title("Qualidade e exportacao")
 st.caption("Checklist basico de qualidade e download do dataset tratado.")
 
 analysis_df = st.session_state.get("analysis_df")
 if analysis_df is None or analysis_df.empty:
-    st.warning("Nenhum dataset de analise disponivel. Va para `1_Upload` e salve o mapeamento.")
+    st.warning("Nenhum dataset de analise disponivel. Va para `Upload` e salve o mapeamento.")
     st.stop()
 
 work_df = analysis_df.copy()

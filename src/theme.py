@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 _THEME_CSS = """
@@ -21,6 +23,13 @@ _THEME_CSS = """
         font-family: "Tahoma", sans-serif !important;
         background: var(--bg);
         color: var(--ink);
+    }
+
+    span.material-symbols-rounded,
+    span.material-symbols-outlined,
+    span.material-icons,
+    i.material-icons {
+        font-family: "Material Symbols Rounded", "Material Symbols Outlined", "Material Icons" !important;
     }
 
     .stApp {
@@ -47,6 +56,10 @@ _THEME_CSS = """
 
     [data-testid="stSidebar"] {
         border-right: 1px solid var(--line);
+    }
+
+    [data-testid="stSidebarNav"] {
+        display: none !important;
     }
 
     [data-testid="stSidebar"] * {
@@ -97,6 +110,34 @@ _THEME_CSS = """
 """
 
 
+def _resolve_logo_path() -> str | None:
+    root = Path(__file__).resolve().parents[1]
+    candidates = [
+        root / "assets" / "logoBrain.png",
+        root / "assets" / "logo.png",
+        root / "assets" / "logo_empresa.png",
+    ]
+    for logo in candidates:
+        if logo.exists():
+            return str(logo)
+    return None
+
+
 def apply_brain_theme() -> None:
     """Apply shared CSS tokens and component styling."""
     st.markdown(_THEME_CSS, unsafe_allow_html=True)
+
+
+def render_sidebar_menu() -> None:
+    """Render shared sidebar menu and branding."""
+    logo_path = _resolve_logo_path()
+    with st.sidebar:
+        if logo_path:
+            st.image(logo_path, use_container_width=True)
+            st.markdown("---")
+
+        st.subheader("Menu")
+        st.page_link("app.py", label="Inicio")
+        st.page_link("pages/1_Upload.py", label="Upload")
+        st.page_link("pages/2_Analises.py", label="Analises")
+        st.page_link("pages/3_Qualidade.py", label="Qualidade")
