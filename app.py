@@ -282,17 +282,12 @@ st.session_state.setdefault(PENDING_MAP_FILTER_KEY, None)
 st.subheader("Filtros")
 st.caption("Sem selecao em um filtro = todos os registros daquele campo.")
 
-empreendimento_options = _clean_options(base_enriched[empreendimento_col])
-city_options = _clean_options(base_enriched[cidade_col]) if cidade_col else []
-tip_options = _clean_options(base_enriched[tipologia_col]) if tipologia_col else []
-status_options = (
-    _clean_options(base_enriched["Status Atual"]) if "Status Atual" in base_enriched.columns else []
-)
+all_empreendimento_options = _clean_options(base_enriched[empreendimento_col])
 
 pending_map_filter = st.session_state.get(PENDING_MAP_FILTER_KEY)
 if pending_map_filter is not None:
     pending_name = str(pending_map_filter).strip()
-    st.session_state[FILTER_EMP_KEY] = [pending_name] if pending_name in empreendimento_options else []
+    st.session_state[FILTER_EMP_KEY] = [pending_name] if pending_name in all_empreendimento_options else []
     st.session_state[FILTER_CITY_KEY] = []
     st.session_state[FILTER_TIPO_KEY] = []
     st.session_state[FILTER_STATUS_KEY] = []
@@ -305,16 +300,51 @@ def _sanitize_filter_state(key: str, options: list[str]) -> None:
     st.session_state[key] = [value for value in current if value in options]
 
 
-_sanitize_filter_state(FILTER_EMP_KEY, empreendimento_options)
-_sanitize_filter_state(FILTER_CITY_KEY, city_options)
-_sanitize_filter_state(FILTER_TIPO_KEY, tip_options)
-_sanitize_filter_state(FILTER_STATUS_KEY, status_options)
+def _filter_with_current_state(exclude_key: str | None = None) -> pd.DataFrame:
+    scoped = base_enriched.copy()
+
+    if exclude_key != FILTER_EMP_KEY and st.session_state[FILTER_EMP_KEY]:
+        scoped = scoped[scoped[empreendimento_col].astype(str).isin(st.session_state[FILTER_EMP_KEY])]
+
+    if cidade_col and exclude_key != FILTER_CITY_KEY and st.session_state[FILTER_CITY_KEY]:
+        scoped = scoped[scoped[cidade_col].astype(str).isin(st.session_state[FILTER_CITY_KEY])]
+
+    if tipologia_col and exclude_key != FILTER_TIPO_KEY and st.session_state[FILTER_TIPO_KEY]:
+        scoped = scoped[scoped[tipologia_col].astype(str).isin(st.session_state[FILTER_TIPO_KEY])]
+
+    if "Status Atual" in scoped.columns and exclude_key != FILTER_STATUS_KEY and st.session_state[FILTER_STATUS_KEY]:
+        scoped = scoped[scoped["Status Atual"].astype(str).isin(st.session_state[FILTER_STATUS_KEY])]
+
+    return scoped
+
+
+def _build_filter_options() -> dict[str, list[str]]:
+    emp_scoped = _filter_with_current_state(exclude_key=FILTER_EMP_KEY)
+    city_scoped = _filter_with_current_state(exclude_key=FILTER_CITY_KEY)
+    tip_scoped = _filter_with_current_state(exclude_key=FILTER_TIPO_KEY)
+    status_scoped = _filter_with_current_state(exclude_key=FILTER_STATUS_KEY)
+
+    return {
+        FILTER_EMP_KEY: _clean_options(emp_scoped[empreendimento_col]),
+        FILTER_CITY_KEY: _clean_options(city_scoped[cidade_col]) if cidade_col else [],
+        FILTER_TIPO_KEY: _clean_options(tip_scoped[tipologia_col]) if tipologia_col else [],
+        FILTER_STATUS_KEY: _clean_options(status_scoped["Status Atual"]) if "Status Atual" in status_scoped.columns else [],
+    }
+
+
+filter_options = _build_filter_options()
+for _ in range(2):
+    _sanitize_filter_state(FILTER_EMP_KEY, filter_options[FILTER_EMP_KEY])
+    _sanitize_filter_state(FILTER_CITY_KEY, filter_options[FILTER_CITY_KEY])
+    _sanitize_filter_state(FILTER_TIPO_KEY, filter_options[FILTER_TIPO_KEY])
+    _sanitize_filter_state(FILTER_STATUS_KEY, filter_options[FILTER_STATUS_KEY])
+    filter_options = _build_filter_options()
 
 fc1, fc2, fc3, fc4 = st.columns(4)
-fc1.multiselect("Empreendimento", options=empreendimento_options, key=FILTER_EMP_KEY)
-fc2.multiselect("Cidade", options=city_options, key=FILTER_CITY_KEY)
-fc3.multiselect("Tipologia", options=tip_options, key=FILTER_TIPO_KEY)
-fc4.multiselect("Status atual", options=status_options, key=FILTER_STATUS_KEY)
+fc1.multiselect("Empreendimento", options=filter_options[FILTER_EMP_KEY], key=FILTER_EMP_KEY)
+fc2.multiselect("Cidade", options=filter_options[FILTER_CITY_KEY], key=FILTER_CITY_KEY)
+fc3.multiselect("Tipologia", options=filter_options[FILTER_TIPO_KEY], key=FILTER_TIPO_KEY)
+fc4.multiselect("Status atual", options=filter_options[FILTER_STATUS_KEY], key=FILTER_STATUS_KEY)
 
 selected_empreendimentos = st.session_state[FILTER_EMP_KEY]
 selected_cities = st.session_state[FILTER_CITY_KEY]
