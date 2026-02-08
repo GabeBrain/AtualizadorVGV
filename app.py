@@ -71,34 +71,73 @@ def _format_brl(value: Any) -> str:
     return "R$ " + _format_decimal(value)
 
 
-def _selection_index_from_event(event: Any) -> int | None:
+def _selection_payload(event: Any) -> Any:
     if event is None:
         return None
-
-    candidate = event
-    if isinstance(candidate, dict):
-        candidate = candidate.get("selection", candidate)
-        if isinstance(candidate, dict):
-            for key in ("indices", "rows", "objects", "points"):
-                values = candidate.get(key)
-                if isinstance(values, list) and values:
-                    first = values[0]
-                    if isinstance(first, int):
-                        return first
-                    if isinstance(first, dict):
-                        for nested_key in ("index", "row", "id"):
-                            nested_value = first.get(nested_key)
-                            if isinstance(nested_value, int):
-                                return nested_value
+    if isinstance(event, dict):
+        return event.get("selection", event)
 
     selection = getattr(event, "selection", None)
     if selection is not None:
-        for key in ("indices", "rows"):
-            values = getattr(selection, key, None)
-            if isinstance(values, list) and values:
-                first = values[0]
-                if isinstance(first, int):
-                    return first
+        return selection
+
+    return event
+
+
+def _flatten_selection_items(value: Any) -> list[Any]:
+    items: list[Any] = []
+    stack = [value]
+
+    while stack:
+        current = stack.pop()
+        if current is None:
+            continue
+
+        if isinstance(current, (list, tuple, set)):
+            stack.extend(list(current))
+            continue
+
+        if isinstance(current, dict):
+            items.append(current)
+            stack.extend(list(current.values()))
+            continue
+
+        items.append(current)
+
+    return items
+
+
+def _selection_index_from_event(event: Any) -> int | None:
+    payload = _selection_payload(event)
+    if payload is None:
+        return None
+
+    for item in _flatten_selection_items(payload):
+        if isinstance(item, int):
+            return item
+
+        if isinstance(item, dict):
+            for key in ("index", "row", "id"):
+                value = item.get(key)
+                if isinstance(value, int):
+                    return value
+
+    return None
+
+
+def _selection_name_from_event(event: Any) -> str | None:
+    payload = _selection_payload(event)
+    if payload is None:
+        return None
+
+    name_keys = ("Empreendimento", "empreendimento", "name", "nome")
+
+    for item in _flatten_selection_items(payload):
+        if isinstance(item, dict):
+            for key in name_keys:
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
 
     return None
 
@@ -426,9 +465,15 @@ else:
     elif st.session_state.get("selected_empreendimento") not in point_options:
         st.session_state["selected_empreendimento"] = point_options[0]
 
-    selected_index = _selection_index_from_event(map_event)
-    if selected_index is not None and 0 <= selected_index < len(points):
-        clicked_empreendimento = str(points.iloc[selected_index]["Empreendimento"])
+    event_payload = map_event if map_event is not None else st.session_state.get("empreendimento_map")
+
+    clicked_empreendimento = _selection_name_from_event(event_payload)
+    if not clicked_empreendimento:
+        selected_index = _selection_index_from_event(event_payload)
+        if selected_index is not None and 0 <= selected_index < len(points):
+            clicked_empreendimento = str(points.iloc[selected_index]["Empreendimento"])
+
+    if clicked_empreendimento and clicked_empreendimento in point_options:
         needs_filter_update = (
             st.session_state[FILTER_EMP_KEY] != [clicked_empreendimento]
             or bool(st.session_state[FILTER_CITY_KEY])
