@@ -155,6 +155,10 @@ with st.expander("Fonte de dados", expanded=True):
             "source_name",
             "source_bytes",
             "selected_empreendimento",
+            "filter_empreendimentos",
+            "filter_cidades",
+            "filter_tipologias",
+            "filter_status",
         ):
             st.session_state.pop(key, None)
 
@@ -224,23 +228,46 @@ if not latest_record.empty and status_metric_col and status_metric_col in latest
     )
     base_enriched = base_enriched.merge(status_frame, on="__registro_id", how="left")
 
+FILTER_EMP_KEY = "filter_empreendimentos"
+FILTER_CITY_KEY = "filter_cidades"
+FILTER_TIPO_KEY = "filter_tipologias"
+FILTER_STATUS_KEY = "filter_status"
+
+for key in (FILTER_EMP_KEY, FILTER_CITY_KEY, FILTER_TIPO_KEY, FILTER_STATUS_KEY):
+    st.session_state.setdefault(key, [])
+
+
 st.subheader("Filtros")
 st.caption("Sem selecao em um filtro = todos os registros daquele campo.")
-fc1, fc2, fc3, fc4 = st.columns(4)
 
 empreendimento_options = _clean_options(base_enriched[empreendimento_col])
-selected_empreendimentos = fc1.multiselect("Empreendimento", options=empreendimento_options, default=[])
-
 city_options = _clean_options(base_enriched[cidade_col]) if cidade_col else []
-selected_cities = fc2.multiselect("Cidade", options=city_options, default=[])
-
 tip_options = _clean_options(base_enriched[tipologia_col]) if tipologia_col else []
-selected_tipologias = fc3.multiselect("Tipologia", options=tip_options, default=[])
-
 status_options = (
     _clean_options(base_enriched["Status Atual"]) if "Status Atual" in base_enriched.columns else []
 )
-selected_status = fc4.multiselect("Status atual", options=status_options, default=[])
+
+
+def _sanitize_filter_state(key: str, options: list[str]) -> None:
+    current = st.session_state.get(key, []) or []
+    st.session_state[key] = [value for value in current if value in options]
+
+
+_sanitize_filter_state(FILTER_EMP_KEY, empreendimento_options)
+_sanitize_filter_state(FILTER_CITY_KEY, city_options)
+_sanitize_filter_state(FILTER_TIPO_KEY, tip_options)
+_sanitize_filter_state(FILTER_STATUS_KEY, status_options)
+
+fc1, fc2, fc3, fc4 = st.columns(4)
+fc1.multiselect("Empreendimento", options=empreendimento_options, key=FILTER_EMP_KEY)
+fc2.multiselect("Cidade", options=city_options, key=FILTER_CITY_KEY)
+fc3.multiselect("Tipologia", options=tip_options, key=FILTER_TIPO_KEY)
+fc4.multiselect("Status atual", options=status_options, key=FILTER_STATUS_KEY)
+
+selected_empreendimentos = st.session_state[FILTER_EMP_KEY]
+selected_cities = st.session_state[FILTER_CITY_KEY]
+selected_tipologias = st.session_state[FILTER_TIPO_KEY]
+selected_status = st.session_state[FILTER_STATUS_KEY]
 
 filtered_base = base_enriched.copy()
 if selected_empreendimentos:
@@ -259,8 +286,11 @@ if filtered_base.empty:
 filtered_ids = set(filtered_base["__registro_id"].tolist())
 filtered_perf = perf_df[perf_df["__registro_id"].isin(filtered_ids)].copy()
 
+filtered_empreendimentos = _clean_options(filtered_base[empreendimento_col])
+
 # Mapa
 st.subheader("Mapa de empreendimentos")
+st.caption("Clique em um ponto do mapa para filtrar automaticamente aquele empreendimento.")
 
 map_base = filtered_base.copy()
 if latitude_col and longitude_col:
@@ -272,12 +302,8 @@ else:
 
 map_base = map_base.dropna(subset=["__lat", "__lon"])
 
-selected_empreendimento = None
-
 if map_base.empty:
     st.warning("Nao ha coordenadas validas para exibir o mapa com os filtros atuais.")
-    fallback_options = _clean_options(filtered_base[empreendimento_col])
-    selected_empreendimento = fallback_options[0] if fallback_options else None
 else:
     latest_by_empreendimento = pd.DataFrame(columns=[empreendimento_col])
     if not filtered_perf.empty and "MesData" in filtered_perf.columns:
@@ -393,31 +419,33 @@ else:
     except TypeError:
         st.pydeck_chart(deck, use_container_width=True, key="empreendimento_map_static")
 
-    selected_index = _selection_index_from_event(map_event)
     point_options = points["Empreendimento"].astype(str).tolist()
 
-    if len(selected_empreendimentos) == 1:
-        st.session_state["selected_empreendimento"] = selected_empreendimentos[0]
-
-    if "selected_empreendimento" not in st.session_state or st.session_state["selected_empreendimento"] not in point_options:
+    if len(st.session_state[FILTER_EMP_KEY]) == 1 and st.session_state[FILTER_EMP_KEY][0] in point_options:
+        st.session_state["selected_empreendimento"] = st.session_state[FILTER_EMP_KEY][0]
+    elif st.session_state.get("selected_empreendimento") not in point_options:
         st.session_state["selected_empreendimento"] = point_options[0]
 
+    selected_index = _selection_index_from_event(map_event)
     if selected_index is not None and 0 <= selected_index < len(points):
-        st.session_state["selected_empreendimento"] = str(points.iloc[selected_index]["Empreendimento"])
+        clicked_empreendimento = str(points.iloc[selected_index]["Empreendimento"])
+        needs_filter_update = (
+            st.session_state[FILTER_EMP_KEY] != [clicked_empreendimento]
+            or bool(st.session_state[FILTER_CITY_KEY])
+            or bool(st.session_state[FILTER_TIPO_KEY])
+            or bool(st.session_state[FILTER_STATUS_KEY])
+        )
+        st.session_state["selected_empreendimento"] = clicked_empreendimento
 
-    selected_empreendimento = st.session_state["selected_empreendimento"]
-    st.caption(f"Empreendimento em foco no mapa: {selected_empreendimento}")
+        if needs_filter_update:
+            st.session_state[FILTER_EMP_KEY] = [clicked_empreendimento]
+            st.session_state[FILTER_CITY_KEY] = []
+            st.session_state[FILTER_TIPO_KEY] = []
+            st.session_state[FILTER_STATUS_KEY] = []
+            st.rerun()
 
-if not selected_empreendimento:
-    st.warning("Nao foi possivel identificar empreendimento para exibir ficha e amenidades.")
-    st.stop()
-
-selected_rows = filtered_base[filtered_base[empreendimento_col].astype(str) == str(selected_empreendimento)].copy()
-if selected_rows.empty:
-    selected_rows = filtered_base.copy()
-
-selected_ids = set(selected_rows["__registro_id"].tolist())
-selected_perf = filtered_perf[filtered_perf["__registro_id"].isin(selected_ids)].copy()
+    if st.session_state.get("selected_empreendimento"):
+        st.caption(f"Empreendimento em foco no mapa: {st.session_state['selected_empreendimento']}")
 
 # Graficos temporais (sempre usando todos os meses disponiveis no arquivo)
 st.subheader("Series mensais de VGV (agregado pelos filtros)")
@@ -503,87 +531,108 @@ else:
             )
             st.altair_chart((bar + line).properties(height=320), use_container_width=True)
 
-# Ficha do empreendimento
-st.subheader("Ficha do empreendimento")
+# Ficha + amenidades apenas quando houver 1 empreendimento no filtro
+if len(filtered_empreendimentos) != 1:
+    st.info(
+        "Ficha do empreendimento e amenidades ficam disponiveis quando o filtro retorna um unico empreendimento. "
+        "Dica: clique em um ponto no mapa para aplicar esse filtro automaticamente."
+    )
+    st.stop()
 
-ficha_fields = [
-    "Empreendimento",
-    "Endereco",
-    "Numero",
-    "Bairro",
-    "CEP",
-    "Cidade",
-    "Estado",
-    "Latitude",
-    "Longitude",
-    "Incorporadora 1",
-    "Incorporadora 2",
-    "Incorporadora 3",
-    "Data de Lancamento",
-    "Data de Entrega",
-    "Tipo",
-    "Quartos",
-    "Garagem",
-    "Torres",
-    "Elevadores",
-    "Unidades por Tipologia",
-    "M2 Privativo",
-    "Padrao",
-    "Tipologia",
-    "Oferta Lancada",
-]
+selected_empreendimento = filtered_empreendimentos[0]
+st.session_state["selected_empreendimento"] = selected_empreendimento
+
+selected_rows = filtered_base[filtered_base[empreendimento_col].astype(str) == selected_empreendimento].copy()
+if selected_rows.empty:
+    st.info("Nao foi possivel montar detalhes para o empreendimento selecionado.")
+    st.stop()
 
 row_for_details = selected_rows.sort_values(by=tipologia_col).iloc[0] if tipologia_col else selected_rows.iloc[0]
 all_columns = list(base_df.columns)
-ficha_data: list[dict[str, Any]] = []
 
-for field in ficha_fields:
-    original_col = _find_column(all_columns, [field])
-    if not original_col:
-        continue
+with st.expander("Ficha do empreendimento", expanded=False):
+    ficha_fields = [
+        "Empreendimento",
+        "Endereco",
+        "Numero",
+        "Bairro",
+        "CEP",
+        "Cidade",
+        "Estado",
+        "Latitude",
+        "Longitude",
+        "Incorporadora 1",
+        "Incorporadora 2",
+        "Incorporadora 3",
+        "Data de Lancamento",
+        "Data de Entrega",
+        "Tipo",
+        "Quartos",
+        "Garagem",
+        "Torres",
+        "Elevadores",
+        "Unidades por Tipologia",
+        "M2 Privativo",
+        "Padrao",
+        "Tipologia",
+        "Oferta Lancada",
+    ]
 
-    value = row_for_details.get(original_col)
-    if "data" in normalize_text(field):
-        if pd.notna(value):
-            value = pd.to_datetime(value, errors="coerce")
-            value = value.strftime("%d/%m/%Y") if pd.notna(value) else "-"
-        else:
+    ficha_data: list[dict[str, Any]] = []
+    for field in ficha_fields:
+        original_col = _find_column(all_columns, [field])
+        if not original_col:
+            continue
+
+        value = row_for_details.get(original_col)
+        if "data" in normalize_text(field):
+            if pd.notna(value):
+                value = pd.to_datetime(value, errors="coerce")
+                value = value.strftime("%d/%m/%Y") if pd.notna(value) else "-"
+            else:
+                value = "-"
+        elif isinstance(value, float) and pd.isna(value):
             value = "-"
-    elif isinstance(value, float) and pd.isna(value):
-        value = "-"
 
-    ficha_data.append({"Campo": field, "Valor": value})
+        ficha_data.append({"Campo": field, "Valor": value})
 
-if ficha_data:
-    st.dataframe(pd.DataFrame(ficha_data), use_container_width=True, hide_index=True)
-else:
-    st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
-
-# Amenidades
-st.subheader("Amenidades presentes (Sim)")
-
-if not amenity_columns:
-    st.info("Nao foi possivel detectar colunas de amenidades automaticamente.")
-else:
-    amenity_groups = extract_present_amenities(row_for_details, amenity_columns)
-    total_present = sum(len(values) for values in amenity_groups.values())
-
-    if total_present == 0:
-        st.info("Nenhuma amenidade marcada como 'Sim' para o empreendimento em foco.")
+    if ficha_data:
+        st.dataframe(pd.DataFrame(ficha_data), use_container_width=True, hide_index=True)
     else:
-        g1, g2, g3, g4 = st.columns(4)
-        col_map = {
-            "Interna": g1,
-            "Externa": g2,
-            "Comercial": g3,
-            "Geral": g4,
-        }
+        st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
 
-        for group_name in ("Interna", "Externa", "Comercial", "Geral"):
-            values = amenity_groups.get(group_name, [])
-            with col_map[group_name]:
-                st.markdown(f"**{group_name} ({len(values)})**")
-                if not values:
-                    st.caption("-")
-                else:
-                    st.markdown("\n".join(f"- {item}" for item in values))
+with st.expander("Amenidades presentes (Sim)", expanded=False):
+    if not amenity_columns:
+        st.info("Nao foi possivel detectar colunas de amenidades automaticamente.")
+    else:
+        merged_groups = {"Interna": set(), "Externa": set(), "Comercial": set(), "Geral": set()}
+        for _, row in selected_rows.iterrows():
+            row_groups = extract_present_amenities(row, amenity_columns)
+            for group_name, values in row_groups.items():
+                merged_groups.setdefault(group_name, set()).update(values)
+
+        amenity_groups = {
+            group_name: sorted(values, key=normalize_text)
+            for group_name, values in merged_groups.items()
+        }
+        total_present = sum(len(values) for values in amenity_groups.values())
+
+        if total_present == 0:
+            st.info("Nenhuma amenidade marcada como 'Sim' para o empreendimento filtrado.")
+        else:
+            g1, g2, g3, g4 = st.columns(4)
+            col_map = {
+                "Interna": g1,
+                "Externa": g2,
+                "Comercial": g3,
+                "Geral": g4,
+            }
+
+            for group_name in ("Interna", "Externa", "Comercial", "Geral"):
+                values = amenity_groups.get(group_name, [])
+                with col_map[group_name]:
+                    st.markdown(f"**{group_name} ({len(values)})**")
+                    if not values:
+                        st.caption("-")
+                    else:
+                        st.markdown("\n".join(f"- {item}" for item in values))
