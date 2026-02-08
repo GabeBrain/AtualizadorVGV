@@ -88,6 +88,41 @@ def _format_brl(value: Any) -> str:
     return "R$ " + _format_decimal(value)
 
 
+def _safe_filename(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in str(value).strip())
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    return cleaned or "empreendimento"
+
+
+def _build_export_dataframe(empreendimento: str, monthly_df: pd.DataFrame) -> pd.DataFrame:
+    row: dict[str, Any] = {"Empreendimento": empreendimento}
+    monthly_indexed = monthly_df.set_index("Mes")
+
+    for month in TARGET_MONTH_LABELS:
+        row[f"VGV Oferta Final {month}"] = (
+            monthly_indexed.at[month, "VGV Nominal"] if month in monthly_indexed.index else pd.NA
+        )
+
+    for month in TARGET_MONTH_LABELS:
+        row[f"VGV Oferta Final Corrigido INCC-DI {month}"] = (
+            monthly_indexed.at[month, "VGV Corrigido INCC-DI"] if month in monthly_indexed.index else pd.NA
+        )
+
+    for month in TARGET_MONTH_LABELS:
+        row[f"VGV Oferta Final Corrigido INCC-M {month}"] = (
+            monthly_indexed.at[month, "VGV Corrigido INCC-M"] if month in monthly_indexed.index else pd.NA
+        )
+
+    return pd.DataFrame([row])
+
+
+def _export_excel_bytes(export_df: pd.DataFrame) -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        export_df.to_excel(writer, index=False, sheet_name="Reajuste_INCC")
+    return output.getvalue()
+
+
 def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Timestamp) -> tuple[float | None, pd.Timestamp | None]:
     if column not in index_df.columns or "MesData" not in index_df.columns:
         return None, None
@@ -325,3 +360,31 @@ for column in ["INCC-DI", "INCC-M"]:
     display_df[column] = display_df[column].map(_format_decimal)
 
 st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+st.subheader("Exportar para Excel")
+st.caption(
+    "Arquivo com 1 linha do empreendimento e 3 blocos mensais: "
+    "VGV nominal, VGV corrigido INCC-DI e VGV corrigido INCC-M."
+)
+
+export_df = _build_export_dataframe(selected_empreendimento, monthly)
+
+with st.expander("Preview do arquivo de exportacao", expanded=False):
+    preview_df = export_df.copy()
+    for col in preview_df.columns:
+        if col == "Empreendimento":
+            continue
+        preview_df[col] = preview_df[col].map(_format_brl)
+    st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+export_bytes = _export_excel_bytes(export_df)
+file_name = f"reajuste_incc_{_safe_filename(selected_empreendimento)}.xlsx"
+
+st.download_button(
+    "Baixar Excel de reajuste",
+    data=export_bytes,
+    file_name=file_name,
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    type="primary",
+    use_container_width=True,
+)
