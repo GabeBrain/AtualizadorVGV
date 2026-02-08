@@ -721,3 +721,12 @@ with st.expander("Amenidades presentes (Sim)", expanded=False):
                         st.caption("-")
                     else:
                         st.markdown("\n".join(f"- {item}" for item in values))
+
+
+st.divider()
+st.caption("Proxima etapa: atualizar VGV a valor presente com INCC para este empreendimento.")
+
+if st.button("Abrir pagina de reajuste INCC deste empreendimento", type="primary", use_container_width=True):
+    st.session_state["reajuste_empreendimento"] = selected_empreendimento
+    st.session_state["selected_empreendimento"] = selected_empreendimento
+    st.switch_page("pages/4_Reajuste_INCC.py")
