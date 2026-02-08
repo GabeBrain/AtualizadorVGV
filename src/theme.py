@@ -18,17 +18,31 @@ _THEME_CSS = """
         --radius: 10px;
     }
 
-    html, body, [class*="css"] {
+    html, body {
         font-size: 13.5px !important;
-        font-family: "Tahoma", sans-serif !important;
         background: var(--bg);
         color: var(--ink);
     }
 
-    span.material-symbols-rounded,
-    span.material-symbols-outlined,
-    span.material-icons,
-    i.material-icons {
+    .stApp,
+    .stApp p,
+    .stApp label,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3,
+    .stApp h4,
+    .stApp h5,
+    .stApp h6,
+    .stApp input,
+    .stApp textarea,
+    .stApp select,
+    .stApp button,
+    .stApp li {
+        font-family: "Tahoma", sans-serif !important;
+    }
+
+    span[class*="material-symbols"],
+    i[class*="material-icons"] {
         font-family: "Material Symbols Rounded", "Material Symbols Outlined", "Material Icons" !important;
     }
 
@@ -56,14 +70,6 @@ _THEME_CSS = """
 
     [data-testid="stSidebar"] {
         border-right: 1px solid var(--line);
-    }
-
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-
-    [data-testid="stSidebar"] * {
-        font-family: "Tahoma", sans-serif !important;
     }
 
     [data-testid="stFileUploader"] section {
@@ -129,15 +135,13 @@ def apply_brain_theme() -> None:
 
 
 def render_sidebar_menu() -> None:
-    """Render shared sidebar menu and branding."""
+    """Render sidebar branding while keeping native Streamlit page navigation."""
     logo_path = _resolve_logo_path()
-    with st.sidebar:
-        if logo_path:
-            st.image(logo_path, use_container_width=True)
-            st.markdown("---")
+    if not logo_path:
+        return
 
-        st.subheader("Menu")
-        st.page_link("app.py", label="Inicio")
-        st.page_link("pages/1_Upload.py", label="Upload")
-        st.page_link("pages/2_Analises.py", label="Analises")
-        st.page_link("pages/3_Qualidade.py", label="Qualidade")
+    try:
+        st.logo(logo_path, size="small")
+    except Exception:
+        with st.sidebar:
+            st.image(logo_path, width=120)
