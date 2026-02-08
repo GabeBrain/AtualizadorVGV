@@ -10,11 +10,7 @@ import pydeck as pdk
 import streamlit as st
 
 from src.theme import apply_brain_theme, render_sidebar_menu
-from src.vgv_parser import (
-    extract_present_amenities,
-    normalize_text,
-    parse_vgv_workbook,
-)
+from src.vgv_parser import extract_present_amenities, normalize_text, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
 
@@ -107,24 +103,35 @@ def _selection_index_from_event(event: Any) -> int | None:
     return None
 
 
-def _status_mode(series: pd.Series) -> str | None:
-    values = series.dropna().astype(str)
-    if values.empty:
-        return None
-    mode = values.mode()
-    if mode.empty:
-        return values.iloc[0]
-    return mode.iloc[0]
+def _clean_options(series: pd.Series) -> list[str]:
+    values = [str(v) for v in series.dropna().astype(str).tolist() if str(v).strip()]
+    return sorted(set(values))
+
+
+def _status_color(status_value: Any) -> list[int]:
+    status_norm = normalize_text(status_value)
+    if "esgotado" in status_norm:
+        return [176, 0, 32, 180]
+    if "ativo" in status_norm:
+        return [91, 117, 55, 180]
+    return [31, 78, 122, 170]
+
+
+def _map_style_light() -> str:
+    styles = getattr(pdk, "map_styles", None)
+    if styles is not None and hasattr(styles, "LIGHT"):
+        return getattr(styles, "LIGHT")
+    return "light"
 
 
 st.title(APP_NAME)
-st.caption("Mapa, series mensais, ficha de empreendimento e amenidades em uma unica pagina.")
+st.caption("Mapa, series mensais, ficha do empreendimento e amenidades em uma unica pagina.")
 
 sample_path = Path(__file__).resolve().parent / "assets" / "tabelaEmpreendimentoReduzida.xlsx"
 
 with st.expander("Fonte de dados", expanded=True):
     uploaded_file = st.file_uploader("Planilha no formato padrao", type=["xlsx", "xls"])
-    b1, b2, b3 = st.columns([1, 1, 2])
+    b1, b2, _ = st.columns([1, 1, 2])
     use_sample = b1.button(
         "Usar exemplo de assets",
         use_container_width=True,
@@ -148,7 +155,6 @@ with st.expander("Fonte de dados", expanded=True):
             "source_name",
             "source_bytes",
             "selected_empreendimento",
-            "selected_tipologia_detalhe",
         ):
             st.session_state.pop(key, None)
 
@@ -208,10 +214,7 @@ preco_lanc_col = _find_column(list(perf_df.columns), ["Preco de Lancamento", "Pr
 latest_record = pd.DataFrame(columns=["__registro_id"])
 if not perf_df.empty and "MesData" in perf_df.columns:
     latest_record = (
-        perf_df.dropna(subset=["MesData"]) 
-        .sort_values("MesData")
-        .groupby("__registro_id", as_index=False)
-        .tail(1)
+        perf_df.dropna(subset=["MesData"]).sort_values("MesData").groupby("__registro_id", as_index=False).tail(1)
     )
 
 base_enriched = base_df.copy()
@@ -222,32 +225,26 @@ if not latest_record.empty and status_metric_col and status_metric_col in latest
     base_enriched = base_enriched.merge(status_frame, on="__registro_id", how="left")
 
 st.subheader("Filtros")
+st.caption("Sem selecao em um filtro = todos os registros daquele campo.")
 fc1, fc2, fc3, fc4 = st.columns(4)
 
-selected_months = fc1.multiselect(
-    "Meses",
-    options=month_labels,
-    default=month_labels,
-)
+empreendimento_options = _clean_options(base_enriched[empreendimento_col])
+selected_empreendimentos = fc1.multiselect("Empreendimento", options=empreendimento_options, default=[])
 
-city_options = sorted(
-    [str(value) for value in base_enriched[cidade_col].dropna().unique()] if cidade_col else []
-)
-selected_cities = fc2.multiselect("Cidade", options=city_options, default=city_options)
+city_options = _clean_options(base_enriched[cidade_col]) if cidade_col else []
+selected_cities = fc2.multiselect("Cidade", options=city_options, default=[])
 
-tip_options = sorted(
-    [str(value) for value in base_enriched[tipologia_col].dropna().unique()] if tipologia_col else []
-)
-selected_tipologias = fc3.multiselect("Tipologia", options=tip_options, default=tip_options)
+tip_options = _clean_options(base_enriched[tipologia_col]) if tipologia_col else []
+selected_tipologias = fc3.multiselect("Tipologia", options=tip_options, default=[])
 
-status_options = sorted(
-    [str(value) for value in base_enriched["Status Atual"].dropna().unique()]
-    if "Status Atual" in base_enriched.columns
-    else []
+status_options = (
+    _clean_options(base_enriched["Status Atual"]) if "Status Atual" in base_enriched.columns else []
 )
-selected_status = fc4.multiselect("Status atual", options=status_options, default=status_options)
+selected_status = fc4.multiselect("Status atual", options=status_options, default=[])
 
 filtered_base = base_enriched.copy()
+if selected_empreendimentos:
+    filtered_base = filtered_base[filtered_base[empreendimento_col].astype(str).isin(selected_empreendimentos)]
 if cidade_col and selected_cities:
     filtered_base = filtered_base[filtered_base[cidade_col].astype(str).isin(selected_cities)]
 if tipologia_col and selected_tipologias:
@@ -255,14 +252,12 @@ if tipologia_col and selected_tipologias:
 if "Status Atual" in filtered_base.columns and selected_status:
     filtered_base = filtered_base[filtered_base["Status Atual"].astype(str).isin(selected_status)]
 
-filtered_ids = set(filtered_base["__registro_id"].tolist())
-filtered_perf = perf_df[perf_df["__registro_id"].isin(filtered_ids)].copy()
-if selected_months:
-    filtered_perf = filtered_perf[filtered_perf["Mes"].isin(selected_months)]
-
 if filtered_base.empty:
     st.warning("Nenhum registro encontrado com os filtros selecionados.")
     st.stop()
+
+filtered_ids = set(filtered_base["__registro_id"].tolist())
+filtered_perf = perf_df[perf_df["__registro_id"].isin(filtered_ids)].copy()
 
 # Mapa
 st.subheader("Mapa de empreendimentos")
@@ -277,11 +272,12 @@ else:
 
 map_base = map_base.dropna(subset=["__lat", "__lon"])
 
+selected_empreendimento = None
+
 if map_base.empty:
     st.warning("Nao ha coordenadas validas para exibir o mapa com os filtros atuais.")
-
-    fallback_options = sorted(filtered_base[empreendimento_col].astype(str).dropna().unique().tolist())
-    selected_empreendimento = st.selectbox("Empreendimento", fallback_options)
+    fallback_options = _clean_options(filtered_base[empreendimento_col])
+    selected_empreendimento = fallback_options[0] if fallback_options else None
 else:
     latest_by_empreendimento = pd.DataFrame(columns=[empreendimento_col])
     if not filtered_perf.empty and "MesData" in filtered_perf.columns:
@@ -342,26 +338,18 @@ else:
         points = points.merge(latest_renamed, on="Empreendimento", how="left")
 
     points["Status Mapa"] = points.get("Status Mapa", pd.Series([None] * len(points))).astype("string")
-
-    def _color(status_value: Any) -> list[int]:
-        status_norm = normalize_text(status_value)
-        if "esgotado" in status_norm:
-            return [176, 0, 32, 180]
-        if "ativo" in status_norm:
-            return [91, 117, 55, 180]
-        return [31, 78, 122, 180]
-
-    points["__color"] = points["Status Mapa"].map(_color)
+    points["__color"] = points["Status Mapa"].map(_status_color)
 
     if vgv_oferta_col and vgv_oferta_col in points.columns:
         metric_values = pd.to_numeric(points[vgv_oferta_col], errors="coerce").fillna(0)
         if float(metric_values.max()) > float(metric_values.min()):
-            points["__radius"] = 8000 + ((metric_values - metric_values.min()) / (metric_values.max() - metric_values.min())) * 12000
+            norm = (metric_values - metric_values.min()) / (metric_values.max() - metric_values.min())
+            points["__radius"] = 220 + norm * 260
         else:
-            points["__radius"] = 9000
+            points["__radius"] = 260
         points["VGV Oferta Final formatado"] = metric_values.map(_format_brl)
     else:
-        points["__radius"] = 9000
+        points["__radius"] = 260
         points["VGV Oferta Final formatado"] = "-"
 
     center_lat = float(points["__lat"].mean())
@@ -382,11 +370,14 @@ else:
         get_radius="__radius",
         pickable=True,
         auto_highlight=True,
+        radius_min_pixels=3,
+        radius_max_pixels=12,
     )
 
     deck = pdk.Deck(
         layers=[layer],
         initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=10.2, pitch=0),
+        map_style=_map_style_light(),
         tooltip={"html": "<br/>".join(tooltip_parts)},
     )
 
@@ -403,71 +394,53 @@ else:
         st.pydeck_chart(deck, use_container_width=True, key="empreendimento_map_static")
 
     selected_index = _selection_index_from_event(map_event)
+    point_options = points["Empreendimento"].astype(str).tolist()
 
-    options = points["Empreendimento"].astype(str).tolist()
-    if "selected_empreendimento" not in st.session_state or st.session_state["selected_empreendimento"] not in options:
-        st.session_state["selected_empreendimento"] = options[0]
+    if len(selected_empreendimentos) == 1:
+        st.session_state["selected_empreendimento"] = selected_empreendimentos[0]
+
+    if "selected_empreendimento" not in st.session_state or st.session_state["selected_empreendimento"] not in point_options:
+        st.session_state["selected_empreendimento"] = point_options[0]
 
     if selected_index is not None and 0 <= selected_index < len(points):
         st.session_state["selected_empreendimento"] = str(points.iloc[selected_index]["Empreendimento"])
 
-    current_index = options.index(st.session_state["selected_empreendimento"])
-    selected_empreendimento = st.selectbox(
-        "Empreendimento selecionado",
-        options=options,
-        index=current_index,
-    )
-    st.session_state["selected_empreendimento"] = selected_empreendimento
+    selected_empreendimento = st.session_state["selected_empreendimento"]
+    st.caption(f"Empreendimento em foco no mapa: {selected_empreendimento}")
+
+if not selected_empreendimento:
+    st.warning("Nao foi possivel identificar empreendimento para exibir ficha e amenidades.")
+    st.stop()
 
 selected_rows = filtered_base[filtered_base[empreendimento_col].astype(str) == str(selected_empreendimento)].copy()
 if selected_rows.empty:
-    st.warning("Nao foi possivel encontrar o empreendimento selecionado apos os filtros.")
-    st.stop()
-
-selected_tip_options = ["Todas"]
-if tipologia_col:
-    selected_tip_options += sorted(
-        [str(value) for value in selected_rows[tipologia_col].dropna().unique()]
-    )
-
-if "selected_tipologia_detalhe" not in st.session_state or st.session_state["selected_tipologia_detalhe"] not in selected_tip_options:
-    st.session_state["selected_tipologia_detalhe"] = selected_tip_options[0]
-
-selected_tipologia_detail = st.selectbox(
-    "Tipologia para analise detalhada",
-    options=selected_tip_options,
-    index=selected_tip_options.index(st.session_state["selected_tipologia_detalhe"]),
-)
-st.session_state["selected_tipologia_detalhe"] = selected_tipologia_detail
-
-if tipologia_col and selected_tipologia_detail != "Todas":
-    selected_rows = selected_rows[selected_rows[tipologia_col].astype(str) == selected_tipologia_detail]
+    selected_rows = filtered_base.copy()
 
 selected_ids = set(selected_rows["__registro_id"].tolist())
 selected_perf = filtered_perf[filtered_perf["__registro_id"].isin(selected_ids)].copy()
 
-# Graficos temporais
-st.subheader("Series mensais de VGV")
+# Graficos temporais (sempre usando todos os meses disponiveis no arquivo)
+st.subheader("Series mensais de VGV (agregado pelos filtros)")
 
-if selected_perf.empty:
-    st.info("Sem dados mensais para o empreendimento selecionado no periodo filtrado.")
+if filtered_perf.empty:
+    st.info("Sem dados mensais para os filtros atuais.")
 else:
     agg_rules: dict[str, str] = {}
-    if vgv_total_col and vgv_total_col in selected_perf.columns:
+    if vgv_total_col and vgv_total_col in filtered_perf.columns:
         agg_rules[vgv_total_col] = "sum"
-    if vgv_oferta_col and vgv_oferta_col in selected_perf.columns:
+    if vgv_oferta_col and vgv_oferta_col in filtered_perf.columns:
         agg_rules[vgv_oferta_col] = "sum"
-    if vendas_col and vendas_col in selected_perf.columns:
+    if vendas_col and vendas_col in filtered_perf.columns:
         agg_rules[vendas_col] = "sum"
-    if estoque_col and estoque_col in selected_perf.columns:
+    if estoque_col and estoque_col in filtered_perf.columns:
         agg_rules[estoque_col] = "sum"
-    if preco_col and preco_col in selected_perf.columns:
+    if preco_col and preco_col in filtered_perf.columns:
         agg_rules[preco_col] = "mean"
-    if preco_lanc_col and preco_lanc_col in selected_perf.columns:
+    if preco_lanc_col and preco_lanc_col in filtered_perf.columns:
         agg_rules[preco_lanc_col] = "mean"
 
     monthly = (
-        selected_perf.groupby(["Mes", "MesData"], as_index=False)
+        filtered_perf.groupby(["Mes", "MesData"], as_index=False)
         .agg(agg_rules)
         .sort_values("MesData")
     )
@@ -482,8 +455,6 @@ else:
             k3.metric("VGV Oferta Final", _format_brl(last_row.get(vgv_oferta_col)))
         if estoque_col and estoque_col in monthly.columns:
             k4.metric("Estoque", _format_number(last_row.get(estoque_col)))
-
-        chart_cols = st.columns(2)
 
         if vgv_total_col and vgv_total_col in monthly.columns and vgv_oferta_col and vgv_oferta_col in monthly.columns:
             vgv_long = monthly.melt(
@@ -507,14 +478,14 @@ else:
                     color=alt.Color("Serie:N", title="Serie"),
                     tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
                 )
-                .properties(height=300)
+                .properties(height=320)
             )
-            chart_cols[0].altair_chart(vgv_chart, use_container_width=True)
+            st.altair_chart(vgv_chart, use_container_width=True)
 
         if estoque_col and estoque_col in monthly.columns and vendas_col and vendas_col in monthly.columns:
             bar = (
                 alt.Chart(monthly)
-                .mark_bar(color="#5b7537")
+                .mark_bar(color="#B8C7A7")
                 .encode(
                     x=alt.X("Mes:N", title="Mes"),
                     y=alt.Y(f"{estoque_col}:Q", title="Estoque"),
@@ -530,7 +501,7 @@ else:
                     tooltip=["Mes", alt.Tooltip(f"{vendas_col}:Q", format=",.0f")],
                 )
             )
-            chart_cols[1].altair_chart((bar + line).properties(height=300), use_container_width=True)
+            st.altair_chart((bar + line).properties(height=320), use_container_width=True)
 
 # Ficha do empreendimento
 st.subheader("Ficha do empreendimento")
@@ -562,7 +533,7 @@ ficha_fields = [
     "Oferta Lancada",
 ]
 
-row_for_details = selected_rows.iloc[0]
+row_for_details = selected_rows.sort_values(by=tipologia_col).iloc[0] if tipologia_col else selected_rows.iloc[0]
 all_columns = list(base_df.columns)
 ficha_data: list[dict[str, Any]] = []
 
@@ -598,7 +569,7 @@ else:
     total_present = sum(len(values) for values in amenity_groups.values())
 
     if total_present == 0:
-        st.info("Nenhuma amenidade marcada como 'Sim' para o recorte selecionado.")
+        st.info("Nenhuma amenidade marcada como 'Sim' para o empreendimento em foco.")
     else:
         g1, g2, g3, g4 = st.columns(4)
         col_map = {
