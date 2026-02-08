@@ -4,7 +4,7 @@ primaryColor = "#5b7537"
 secondaryBackgroundColor = "#eef2e4"
 textColor = "#111827"
 backgroundColor = "#f7f8fa"
-font = "serif"
+font = "sans serif"
 
 [client]
 toolbarMode = "minimal"

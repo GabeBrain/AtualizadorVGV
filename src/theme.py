@@ -18,36 +18,9 @@ _THEME_CSS = """
         --radius: 10px;
     }
 
-    html, body {
-        font-size: 13.5px !important;
-        background: var(--bg);
-        color: var(--ink);
-    }
-
-    .stApp,
-    .stApp p,
-    .stApp label,
-    .stApp h1,
-    .stApp h2,
-    .stApp h3,
-    .stApp h4,
-    .stApp h5,
-    .stApp h6,
-    .stApp input,
-    .stApp textarea,
-    .stApp select,
-    .stApp button,
-    .stApp li {
-        font-family: "Tahoma", sans-serif !important;
-    }
-
-    span[class*="material-symbols"],
-    i[class*="material-icons"] {
-        font-family: "Material Symbols Rounded", "Material Symbols Outlined", "Material Icons" !important;
-    }
-
     .stApp {
         background: var(--bg);
+        color: var(--ink);
     }
 
     .block-container {
@@ -70,6 +43,10 @@ _THEME_CSS = """
 
     [data-testid="stSidebar"] {
         border-right: 1px solid var(--line);
+    }
+
+    [data-testid="stSidebarNav"] [data-testid="stSidebarNavLinkLabel"] {
+        line-height: 1.2;
     }
 
     [data-testid="stFileUploader"] section {
@@ -112,6 +89,11 @@ _THEME_CSS = """
         color: var(--muted);
         font-size: 0.9rem;
     }
+
+    .sidebar-logo-wrap {
+        margin-top: 0.35rem;
+        opacity: 0.92;
+    }
 </style>
 """
 
@@ -135,13 +117,11 @@ def apply_brain_theme() -> None:
 
 
 def render_sidebar_menu() -> None:
-    """Render sidebar branding while keeping native Streamlit page navigation."""
+    """Render lightweight sidebar branding using native Streamlit page navigation."""
     logo_path = _resolve_logo_path()
     if not logo_path:
         return
 
-    try:
-        st.logo(logo_path, size="small")
-    except Exception:
-        with st.sidebar:
-            st.image(logo_path, width=120)
+    with st.sidebar:
+        st.markdown("<div class='sidebar-logo-wrap'></div>", unsafe_allow_html=True)
+        st.image(logo_path, width=56)
