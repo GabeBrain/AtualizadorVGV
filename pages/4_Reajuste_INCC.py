@@ -88,15 +88,9 @@ def _format_brl(value: Any) -> str:
     return "R$ " + _format_decimal(value)
 
 
-def _safe_filename(value: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() else "_" for ch in str(value).strip())
-    cleaned = "_".join(part for part in cleaned.split("_") if part)
-    return cleaned or "empreendimento"
-
-
-def _build_export_dataframe(empreendimento: str, monthly_df: pd.DataFrame) -> pd.DataFrame:
+def _build_export_row(empreendimento: str, monthly_df: pd.DataFrame) -> dict[str, Any]:
     row: dict[str, Any] = {"Empreendimento": empreendimento}
-    monthly_indexed = monthly_df.set_index("Mes")
+    monthly_indexed = monthly_df.set_index("Mes") if not monthly_df.empty else pd.DataFrame(index=pd.Index([], name="Mes"))
 
     for month in TARGET_MONTH_LABELS:
         row[f"VGV Oferta Final {month}"] = (
@@ -113,7 +107,20 @@ def _build_export_dataframe(empreendimento: str, monthly_df: pd.DataFrame) -> pd
             monthly_indexed.at[month, "VGV Corrigido INCC-M"] if month in monthly_indexed.index else pd.NA
         )
 
-    return pd.DataFrame([row])
+    return row
+
+
+def _build_export_dataframe_all(monthly_all_df: pd.DataFrame, empreendimentos: list[str]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+
+    for empreendimento in empreendimentos:
+        if monthly_all_df.empty:
+            emp_monthly = pd.DataFrame(columns=["Mes", "VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"])
+        else:
+            emp_monthly = monthly_all_df[monthly_all_df["Empreendimento"] == empreendimento].copy()
+        rows.append(_build_export_row(empreendimento, emp_monthly))
+
+    return pd.DataFrame(rows)
 
 
 def _export_excel_bytes(export_df: pd.DataFrame) -> bytes:
@@ -150,10 +157,12 @@ def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Tim
 st.title("Reajuste de VGV a valor presente")
 st.caption("Atualizacao do VGV Oferta Final para 12/2025 com INCC-DI e INCC-M.")
 
-nav_col, _ = st.columns([1, 4])
-with nav_col:
-    if st.button("Voltar para analise principal", use_container_width=True):
+nav_left, nav_right, _ = st.columns([1.2, 2.4, 3.4])
+with nav_left:
+    if st.button("Voltar para analise", use_container_width=True):
         st.switch_page("app.py")
+
+export_button_placeholder = nav_right.empty()
 
 sample_path = Path(__file__).resolve().parents[1] / "assets" / "tabelaEmpreendimentoReduzida.xlsx"
 source_mode = st.session_state.get("source_mode")
@@ -230,14 +239,14 @@ if analysis_df.empty:
     st.warning(
         "Nao ha dados para os meses 01/2021, 02/2021 e 03/2021 no empreendimento selecionado."
     )
-    st.stop()
-
-monthly = (
-    analysis_df.groupby(["Mes", "MesData"], as_index=False)[vgv_oferta_col]
-    .sum()
-    .sort_values("MesData")
-)
-monthly = monthly.rename(columns={vgv_oferta_col: "VGV Nominal"})
+    monthly = pd.DataFrame(columns=["Mes", "MesData", "VGV Nominal"])
+else:
+    monthly = (
+        analysis_df.groupby(["Mes", "MesData"], as_index=False)[vgv_oferta_col]
+        .sum()
+        .sort_values("MesData")
+    )
+    monthly = monthly.rename(columns={vgv_oferta_col: "VGV Nominal"})
 
 incc_path = Path(__file__).resolve().parents[1] / "assets" / "INCC_Series_MeDI.xlsx"
 if not incc_path.exists():
@@ -260,6 +269,47 @@ base_m, base_m_date = _resolve_base_index(incc_df, "INCC-M", PRESENT_BASE_DATE)
 if base_di is None and base_m is None:
     st.error("Nao foi possivel encontrar valores de base do INCC para a data alvo.")
     st.stop()
+
+perf_all = perf_df.copy()
+perf_all[empreendimento_col] = perf_all[empreendimento_col].astype(str)
+perf_all[vgv_oferta_col] = pd.to_numeric(perf_all[vgv_oferta_col], errors="coerce")
+perf_all = perf_all.dropna(subset=["MesData", vgv_oferta_col])
+
+analysis_all = perf_all[perf_all["Mes"].isin(TARGET_MONTH_LABELS)].copy()
+monthly_all = (
+    analysis_all.groupby([empreendimento_col, "Mes", "MesData"], as_index=False)[vgv_oferta_col]
+    .sum()
+    .sort_values([empreendimento_col, "MesData"])
+    .rename(columns={empreendimento_col: "Empreendimento", vgv_oferta_col: "VGV Nominal"})
+)
+
+monthly_all = monthly_all.merge(incc_df, on="MesData", how="left")
+
+if base_di is not None and "INCC-DI" in monthly_all.columns:
+    monthly_all["VGV Corrigido INCC-DI"] = (
+        monthly_all["VGV Nominal"] * base_di / monthly_all["INCC-DI"].replace(0, pd.NA)
+    )
+else:
+    monthly_all["VGV Corrigido INCC-DI"] = pd.NA
+
+if base_m is not None and "INCC-M" in monthly_all.columns:
+    monthly_all["VGV Corrigido INCC-M"] = (
+        monthly_all["VGV Nominal"] * base_m / monthly_all["INCC-M"].replace(0, pd.NA)
+    )
+else:
+    monthly_all["VGV Corrigido INCC-M"] = pd.NA
+
+export_df = _build_export_dataframe_all(monthly_all, empreendimento_options)
+export_bytes = _export_excel_bytes(export_df)
+
+export_button_placeholder.download_button(
+    "Exportar Excel (todos os empreendimentos)",
+    data=export_bytes,
+    file_name="reajuste_incc_todos_empreendimentos.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    type="primary",
+    use_container_width=True,
+)
 
 monthly = monthly.merge(incc_df, on="MesData", how="left")
 
@@ -361,30 +411,15 @@ for column in ["INCC-DI", "INCC-M"]:
 
 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-st.subheader("Exportar para Excel")
 st.caption(
-    "Arquivo com 1 linha do empreendimento e 3 blocos mensais: "
-    "VGV nominal, VGV corrigido INCC-DI e VGV corrigido INCC-M."
+    "Exportador no topo: arquivo com todos os empreendimentos e 3 blocos mensais "
+    "(nominal, corrigido INCC-DI e corrigido INCC-M)."
 )
 
-export_df = _build_export_dataframe(selected_empreendimento, monthly)
-
-with st.expander("Preview do arquivo de exportacao", expanded=False):
+with st.expander("Preview do Excel de exportacao (todos os empreendimentos)", expanded=False):
     preview_df = export_df.copy()
     for col in preview_df.columns:
         if col == "Empreendimento":
             continue
         preview_df[col] = preview_df[col].map(_format_brl)
     st.dataframe(preview_df, use_container_width=True, hide_index=True)
-
-export_bytes = _export_excel_bytes(export_df)
-file_name = f"reajuste_incc_{_safe_filename(selected_empreendimento)}.xlsx"
-
-st.download_button(
-    "Baixar Excel de reajuste",
-    data=export_bytes,
-    file_name=file_name,
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    type="primary",
-    use_container_width=True,
-)
