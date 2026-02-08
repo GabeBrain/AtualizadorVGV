@@ -90,10 +90,6 @@ _THEME_CSS = """
         font-size: 0.9rem;
     }
 
-    .sidebar-logo-wrap {
-        margin-top: 0.35rem;
-        opacity: 0.92;
-    }
 </style>
 """
 
@@ -122,6 +118,8 @@ def render_sidebar_menu() -> None:
     if not logo_path:
         return
 
-    with st.sidebar:
-        st.markdown("<div class='sidebar-logo-wrap'></div>", unsafe_allow_html=True)
-        st.image(logo_path, width=56)
+    try:
+        st.logo(logo_path, size="small")
+    except Exception:
+        with st.sidebar:
+            st.image(logo_path, width=56)
