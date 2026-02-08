@@ -198,6 +198,7 @@ with st.expander("Fonte de dados", expanded=True):
             "filter_cidades",
             "filter_tipologias",
             "filter_status",
+            "__pending_map_filter",
         ):
             st.session_state.pop(key, None)
 
@@ -271,9 +272,11 @@ FILTER_EMP_KEY = "filter_empreendimentos"
 FILTER_CITY_KEY = "filter_cidades"
 FILTER_TIPO_KEY = "filter_tipologias"
 FILTER_STATUS_KEY = "filter_status"
+PENDING_MAP_FILTER_KEY = "__pending_map_filter"
 
 for key in (FILTER_EMP_KEY, FILTER_CITY_KEY, FILTER_TIPO_KEY, FILTER_STATUS_KEY):
     st.session_state.setdefault(key, [])
+st.session_state.setdefault(PENDING_MAP_FILTER_KEY, None)
 
 
 st.subheader("Filtros")
@@ -285,6 +288,16 @@ tip_options = _clean_options(base_enriched[tipologia_col]) if tipologia_col else
 status_options = (
     _clean_options(base_enriched["Status Atual"]) if "Status Atual" in base_enriched.columns else []
 )
+
+pending_map_filter = st.session_state.get(PENDING_MAP_FILTER_KEY)
+if pending_map_filter is not None:
+    pending_name = str(pending_map_filter).strip()
+    st.session_state[FILTER_EMP_KEY] = [pending_name] if pending_name in empreendimento_options else []
+    st.session_state[FILTER_CITY_KEY] = []
+    st.session_state[FILTER_TIPO_KEY] = []
+    st.session_state[FILTER_STATUS_KEY] = []
+    st.session_state["selected_empreendimento"] = pending_name or None
+    st.session_state[PENDING_MAP_FILTER_KEY] = None
 
 
 def _sanitize_filter_state(key: str, options: list[str]) -> None:
@@ -483,10 +496,7 @@ else:
         st.session_state["selected_empreendimento"] = clicked_empreendimento
 
         if needs_filter_update:
-            st.session_state[FILTER_EMP_KEY] = [clicked_empreendimento]
-            st.session_state[FILTER_CITY_KEY] = []
-            st.session_state[FILTER_TIPO_KEY] = []
-            st.session_state[FILTER_STATUS_KEY] = []
+            st.session_state[PENDING_MAP_FILTER_KEY] = clicked_empreendimento
             st.rerun()
 
     if st.session_state.get("selected_empreendimento"):
