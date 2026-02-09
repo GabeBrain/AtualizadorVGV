@@ -230,6 +230,55 @@ def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Tim
     return float(row[column]), pd.Timestamp(row["MesData"])
 
 
+def _compound_factor_from_index(
+    index_df: pd.DataFrame,
+    column: str,
+    start_date: Any,
+    end_date: Any,
+) -> float | None:
+    if column not in index_df.columns or "MesData" not in index_df.columns:
+        return None
+
+    start_ts = pd.to_datetime(start_date, errors="coerce")
+    end_ts = pd.to_datetime(end_date, errors="coerce")
+    if pd.isna(start_ts) or pd.isna(end_ts):
+        return None
+
+    start_ts = start_ts.to_period("M").to_timestamp()
+    end_ts = end_ts.to_period("M").to_timestamp()
+    if start_ts > end_ts:
+        return None
+    if start_ts == end_ts:
+        return 1.0
+
+    frame = index_df[["MesData", column]].copy()
+    frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = (
+        frame.dropna(subset=["MesData", column])
+        .sort_values("MesData")
+        .drop_duplicates(subset=["MesData"], keep="last")
+    )
+    if frame.empty:
+        return None
+
+    month_set = set(frame["MesData"].tolist())
+    if start_ts not in month_set:
+        return None
+
+    if end_ts not in month_set:
+        previous_end = frame[frame["MesData"] <= end_ts]
+        if previous_end.empty:
+            return None
+        end_ts = pd.Timestamp(previous_end.iloc[-1]["MesData"])
+
+    frame["factor_step"] = frame[column] / frame[column].shift(1)
+    steps = frame[(frame["MesData"] > start_ts) & (frame["MesData"] <= end_ts)]["factor_step"].dropna()
+    if steps.empty:
+        return None
+
+    return float(steps.prod())
+
+
 @st.cache_data(show_spinner=False)
 def _build_reajuste_dataset(
     perf_source: pd.DataFrame,
@@ -840,12 +889,77 @@ else:
         f"Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
     )
 
+    audit_frame = reajuste_monthly[["Mes", "MesData", "VGV Nominal"]].copy()
+    audit_frame["VGV Corrigido INCC-DI (composto)"] = pd.NA
+    audit_frame["VGV Corrigido INCC-M (composto)"] = pd.NA
+
+    audit_warning: str | None = None
+    try:
+        incc_audit = _load_incc_series(str(incc_series_path))
+        if not incc_audit.empty:
+            di_end = base_di_date if isinstance(base_di_date, pd.Timestamp) else REAJUSTE_BASE_DATE
+            m_end = base_m_date if isinstance(base_m_date, pd.Timestamp) else REAJUSTE_BASE_DATE
+
+            for idx, row in audit_frame.iterrows():
+                factor_di = _compound_factor_from_index(incc_audit, "INCC-DI", row["MesData"], di_end)
+                factor_m = _compound_factor_from_index(incc_audit, "INCC-M", row["MesData"], m_end)
+
+                if factor_di is not None:
+                    audit_frame.at[idx, "VGV Corrigido INCC-DI (composto)"] = row["VGV Nominal"] * factor_di
+                if factor_m is not None:
+                    audit_frame.at[idx, "VGV Corrigido INCC-M (composto)"] = row["VGV Nominal"] * factor_m
+        else:
+            audit_warning = "Sem dados de INCC para validar o metodo composto."
+    except Exception as exc:
+        audit_warning = f"Nao foi possivel calcular auditoria composta: {exc}"
+
+    sum_di_current = reajuste_monthly["VGV Corrigido INCC-DI"].sum(min_count=1)
+    sum_di_comp = audit_frame["VGV Corrigido INCC-DI (composto)"].sum(min_count=1)
+    sum_m_current = reajuste_monthly["VGV Corrigido INCC-M"].sum(min_count=1)
+    sum_m_comp = audit_frame["VGV Corrigido INCC-M (composto)"].sum(min_count=1)
+
+    with st.expander("Resumo metodologico do reajuste", expanded=False):
+        st.markdown(
+            "\n".join(
+                [
+                    "- Metodo atual: usa razao direta entre indice base e indice do mes (Indice_base / Indice_mes).",
+                    "- Metodo auditoria (composto): encadeia variacao mensal de cada mes ate a base.",
+                    "- Em series consistentes, os dois metodos devem convergir (diferencas pequenas por arredondamento/base faltante).",
+                ]
+            )
+        )
+        if audit_warning:
+            st.info(audit_warning)
+
+        d1, d2 = st.columns(2)
+        d1.metric(
+            "DI: diferenca (composto - atual)",
+            _format_brl((sum_di_comp - sum_di_current) if pd.notna(sum_di_comp) and pd.notna(sum_di_current) else pd.NA),
+        )
+        d2.metric(
+            "M: diferenca (composto - atual)",
+            _format_brl((sum_m_comp - sum_m_current) if pd.notna(sum_m_comp) and pd.notna(sum_m_current) else pd.NA),
+        )
+
     reajuste_plot = reajuste_monthly.melt(
         id_vars=["Mes", "MesData"],
         value_vars=["VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"],
         var_name="Serie",
         value_name="Valor",
     )
+    if audit_frame["VGV Corrigido INCC-DI (composto)"].notna().any():
+        extra_di = audit_frame[["Mes", "MesData", "VGV Corrigido INCC-DI (composto)"]].rename(
+            columns={"VGV Corrigido INCC-DI (composto)": "Valor"}
+        )
+        extra_di["Serie"] = "VGV corrigido (INCC-DI composto)"
+        reajuste_plot = pd.concat([reajuste_plot, extra_di], ignore_index=True)
+    if audit_frame["VGV Corrigido INCC-M (composto)"].notna().any():
+        extra_m = audit_frame[["Mes", "MesData", "VGV Corrigido INCC-M (composto)"]].rename(
+            columns={"VGV Corrigido INCC-M (composto)": "Valor"}
+        )
+        extra_m["Serie"] = "VGV corrigido (INCC-M composto)"
+        reajuste_plot = pd.concat([reajuste_plot, extra_m], ignore_index=True)
+
     reajuste_plot = reajuste_plot.dropna(subset=["Valor"])
     reajuste_plot["Serie"] = reajuste_plot["Serie"].replace(
         {
