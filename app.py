@@ -13,6 +13,8 @@ from src.theme import apply_brain_theme, render_sidebar_menu
 from src.vgv_parser import extract_present_amenities, normalize_text, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
+REAJUSTE_TARGET_MONTHS = ("01/2021", "02/2021", "03/2021")
+REAJUSTE_BASE_DATE = pd.Timestamp("2025-12-01")
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":bar_chart:")
 apply_brain_theme()
@@ -163,6 +165,139 @@ def _map_style_light() -> str:
     return "light"
 
 
+@st.cache_data(show_spinner=False)
+def _load_incc_series(path_text: str) -> pd.DataFrame:
+    def _read_sheet(sheet_name: str) -> pd.DataFrame:
+        raw = pd.read_excel(path_text, sheet_name=sheet_name, header=1)
+        if raw.empty or raw.shape[1] < 2:
+            return pd.DataFrame(columns=["MesData", sheet_name])
+
+        date_col = raw.columns[0]
+        index_col = raw.columns[1]
+
+        frame = raw[[date_col, index_col]].rename(columns={date_col: "MesData", index_col: sheet_name}).copy()
+        frame["MesData"] = pd.to_datetime(frame["MesData"], errors="coerce").dt.to_period("M").dt.to_timestamp()
+        frame[sheet_name] = pd.to_numeric(frame[sheet_name], errors="coerce")
+        frame = frame.dropna(subset=["MesData", sheet_name]).sort_values("MesData")
+        return frame.reset_index(drop=True)
+
+    di = _read_sheet("INCC-DI")
+    m = _read_sheet("INCC-M")
+
+    merged = pd.merge(di, m, on="MesData", how="outer")
+    merged = merged.sort_values("MesData").drop_duplicates(subset=["MesData"], keep="last")
+    return merged.reset_index(drop=True)
+
+
+def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Timestamp) -> tuple[float | None, pd.Timestamp | None]:
+    if column not in index_df.columns or "MesData" not in index_df.columns:
+        return None, None
+
+    frame = index_df[["MesData", column]].copy()
+    frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = frame.dropna(subset=["MesData", column]).sort_values("MesData")
+    if frame.empty:
+        return None, None
+
+    exact = frame[frame["MesData"] == target_date]
+    if not exact.empty:
+        row = exact.iloc[-1]
+        return float(row[column]), pd.Timestamp(row["MesData"])
+
+    previous = frame[frame["MesData"] <= target_date]
+    if not previous.empty:
+        row = previous.iloc[-1]
+        return float(row[column]), pd.Timestamp(row["MesData"])
+
+    row = frame.iloc[-1]
+    return float(row[column]), pd.Timestamp(row["MesData"])
+
+
+@st.cache_data(show_spinner=False)
+def _build_reajuste_dataset(
+    perf_source: pd.DataFrame,
+    incc_path_text: str,
+    target_months: tuple[str, ...],
+    base_date_text: str,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    empty_columns = [
+        "__registro_id",
+        "Empreendimento",
+        "Mes",
+        "MesData",
+        "VGV Nominal",
+        "INCC-DI",
+        "INCC-M",
+        "VGV Corrigido INCC-DI",
+        "VGV Corrigido INCC-M",
+    ]
+    empty_frame = pd.DataFrame(columns=empty_columns)
+
+    incc_df = _load_incc_series(incc_path_text)
+    if incc_df.empty:
+        return empty_frame, {}
+
+    base_date = pd.to_datetime(base_date_text, errors="coerce")
+    if pd.isna(base_date):
+        base_date = REAJUSTE_BASE_DATE
+
+    base_di, base_di_date = _resolve_base_index(incc_df, "INCC-DI", base_date)
+    base_m, base_m_date = _resolve_base_index(incc_df, "INCC-M", base_date)
+
+    meta: dict[str, Any] = {
+        "base_di": base_di,
+        "base_m": base_m,
+        "base_di_date": base_di_date,
+        "base_m_date": base_m_date,
+    }
+
+    perf = perf_source.copy()
+    if perf.empty:
+        return empty_frame, meta
+
+    if "MesData" not in perf.columns and "Mes" in perf.columns:
+        perf["MesData"] = pd.to_datetime("01/" + perf["Mes"].astype(str), format="%d/%m/%Y", errors="coerce")
+    if "Mes" not in perf.columns and "MesData" in perf.columns:
+        perf["Mes"] = pd.to_datetime(perf["MesData"], errors="coerce").dt.strftime("%m/%Y")
+
+    empreendimento_col = _find_column(list(perf.columns), ["Empreendimento"])
+    vgv_col = _find_column(list(perf.columns), ["VGV Oferta Final"])
+
+    if not empreendimento_col or not vgv_col or "Mes" not in perf.columns or "MesData" not in perf.columns:
+        return empty_frame, meta
+
+    if "__registro_id" not in perf.columns:
+        perf["__registro_id"] = range(1, len(perf) + 1)
+
+    perf[vgv_col] = pd.to_numeric(perf[vgv_col], errors="coerce")
+    perf = perf.dropna(subset=["MesData", vgv_col])
+    perf = perf[perf["Mes"].isin(list(target_months))].copy()
+
+    if perf.empty:
+        return empty_frame, meta
+
+    monthly = (
+        perf.groupby(["__registro_id", empreendimento_col, "Mes", "MesData"], as_index=False)[vgv_col]
+        .sum()
+        .rename(columns={empreendimento_col: "Empreendimento", vgv_col: "VGV Nominal"})
+    )
+
+    monthly = monthly.merge(incc_df, on="MesData", how="left")
+
+    if base_di is not None and "INCC-DI" in monthly.columns:
+        monthly["VGV Corrigido INCC-DI"] = monthly["VGV Nominal"] * base_di / monthly["INCC-DI"].replace(0, pd.NA)
+    else:
+        monthly["VGV Corrigido INCC-DI"] = pd.NA
+
+    if base_m is not None and "INCC-M" in monthly.columns:
+        monthly["VGV Corrigido INCC-M"] = monthly["VGV Nominal"] * base_m / monthly["INCC-M"].replace(0, pd.NA)
+    else:
+        monthly["VGV Corrigido INCC-M"] = pd.NA
+
+    monthly = monthly.sort_values(["Empreendimento", "MesData"]).reset_index(drop=True)
+    return monthly, meta
+
+
 st.title(APP_NAME)
 st.caption("Mapa, series mensais, ficha do empreendimento e amenidades em uma unica pagina.")
 
@@ -254,6 +389,24 @@ estoque_col = _find_column(list(perf_df.columns), ["Estoque"])
 vendas_col = _find_column(list(perf_df.columns), ["Vendas"])
 preco_col = _find_column(list(perf_df.columns), ["Preco"])
 preco_lanc_col = _find_column(list(perf_df.columns), ["Preco de Lancamento", "Preco de Lan?amento"])
+
+reajuste_perf = pd.DataFrame()
+reajuste_meta: dict[str, Any] = {}
+reajuste_error: str | None = None
+incc_series_path = Path(__file__).resolve().parent / "assets" / "INCC_Series_MeDI.xlsx"
+
+if incc_series_path.exists():
+    try:
+        reajuste_perf, reajuste_meta = _build_reajuste_dataset(
+            perf_df,
+            str(incc_series_path),
+            REAJUSTE_TARGET_MONTHS,
+            REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
+        )
+    except Exception as exc:
+        reajuste_error = f"Falha ao preparar reajuste INCC: {exc}"
+else:
+    reajuste_error = "Arquivo de INCC (assets/INCC_Series_MeDI.xlsx) nao encontrado."
 
 latest_record = pd.DataFrame(columns=["__registro_id"])
 if not perf_df.empty and "MesData" in perf_df.columns:
@@ -367,6 +520,11 @@ if filtered_base.empty:
 
 filtered_ids = set(filtered_base["__registro_id"].tolist())
 filtered_perf = perf_df[perf_df["__registro_id"].isin(filtered_ids)].copy()
+filtered_reajuste = (
+    reajuste_perf[reajuste_perf["__registro_id"].isin(filtered_ids)].copy()
+    if not reajuste_perf.empty
+    else pd.DataFrame()
+)
 
 filtered_empreendimentos = _clean_options(filtered_base[empreendimento_col])
 
@@ -616,6 +774,83 @@ else:
             )
             st.altair_chart((bar + line).properties(height=320), use_container_width=True)
 
+st.subheader("Reajuste INCC (agregado pelos filtros)")
+st.caption(
+    "Meses-alvo do reajuste: 01/2021 a 03/2021 | Base de atualizacao: 12/2025. "
+    "Os valores seguem exatamente o recorte dos filtros atuais."
+)
+
+if reajuste_error:
+    st.info(reajuste_error)
+elif filtered_reajuste.empty:
+    st.info("Sem dados de reajuste para os filtros atuais e meses-alvo (01/2021 a 03/2021).")
+else:
+    reajuste_monthly = (
+        filtered_reajuste.groupby(["Mes", "MesData"], as_index=False)
+        .agg(
+            {
+                "VGV Nominal": "sum",
+                "VGV Corrigido INCC-DI": "sum",
+                "VGV Corrigido INCC-M": "sum",
+            }
+        )
+        .sort_values("MesData")
+    )
+
+    target_label = (
+        filtered_empreendimentos[0]
+        if len(filtered_empreendimentos) == 1
+        else f"{len(filtered_empreendimentos)} empreendimentos (filtros)"
+    )
+
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Empreendimento", target_label)
+    r2.metric("Soma nominal", _format_brl(reajuste_monthly["VGV Nominal"].sum()))
+    r3.metric(
+        "Soma corrigida INCC-DI",
+        _format_brl(reajuste_monthly["VGV Corrigido INCC-DI"].sum(min_count=1)),
+    )
+    r4.metric(
+        "Soma corrigida INCC-M",
+        _format_brl(reajuste_monthly["VGV Corrigido INCC-M"].sum(min_count=1)),
+    )
+
+    base_di_date = reajuste_meta.get("base_di_date")
+    base_m_date = reajuste_meta.get("base_m_date")
+    base_di_label = base_di_date.strftime("%m/%Y") if isinstance(base_di_date, pd.Timestamp) else "-"
+    base_m_label = base_m_date.strftime("%m/%Y") if isinstance(base_m_date, pd.Timestamp) else "-"
+    st.caption(
+        f"Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
+    )
+
+    reajuste_plot = reajuste_monthly.melt(
+        id_vars=["Mes", "MesData"],
+        value_vars=["VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"],
+        var_name="Serie",
+        value_name="Valor",
+    )
+    reajuste_plot = reajuste_plot.dropna(subset=["Valor"])
+    reajuste_plot["Serie"] = reajuste_plot["Serie"].replace(
+        {
+            "VGV Nominal": "VGV Oferta Final (nominal)",
+            "VGV Corrigido INCC-DI": "VGV corrigido (INCC-DI)",
+            "VGV Corrigido INCC-M": "VGV corrigido (INCC-M)",
+        }
+    )
+
+    reajuste_chart = (
+        alt.Chart(reajuste_plot)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("MesData:T", title="Mes"),
+            y=alt.Y("Valor:Q", title="VGV (R$)"),
+            color=alt.Color("Serie:N", title="Serie"),
+            tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(reajuste_chart, use_container_width=True)
+
 # Ficha + amenidades apenas quando houver 1 empreendimento no filtro
 if len(filtered_empreendimentos) != 1:
     st.info(
@@ -723,10 +958,3 @@ with st.expander("Amenidades presentes (Sim)", expanded=False):
                         st.markdown("\n".join(f"- {item}" for item in values))
 
 
-st.divider()
-st.caption("Proxima etapa: atualizar VGV a valor presente com INCC para este empreendimento.")
-
-if st.button("Abrir pagina de reajuste INCC deste empreendimento", type="primary", use_container_width=True):
-    st.session_state["reajuste_empreendimento"] = selected_empreendimento
-    st.session_state["selected_empreendimento"] = selected_empreendimento
-    st.switch_page("pages/4_Reajuste_INCC.py")
