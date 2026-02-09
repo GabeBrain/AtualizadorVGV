@@ -13,7 +13,7 @@ from src.theme import apply_brain_theme, render_sidebar_menu
 from src.vgv_parser import extract_present_amenities, normalize_text, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
-REAJUSTE_BASE_DATE_FALLBACK = pd.Timestamp("2025-12-01")
+REAJUSTE_BASE_DATE = pd.Timestamp("2025-12-01")
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":bar_chart:")
 apply_brain_theme()
@@ -304,7 +304,7 @@ def _build_reajuste_dataset(
 
     base_date = pd.to_datetime(base_date_text, errors="coerce")
     if pd.isna(base_date):
-        base_date = REAJUSTE_BASE_DATE_FALLBACK
+        base_date = REAJUSTE_BASE_DATE
 
     base_di, base_di_date = _resolve_base_index(incc_df, "INCC-DI", base_date)
     base_m, base_m_date = _resolve_base_index(incc_df, "INCC-M", base_date)
@@ -464,14 +464,6 @@ reajuste_error: str | None = None
 incc_series_path = Path(__file__).resolve().parent / "assets" / "INCC_Series_MeDI.xlsx"
 
 reajuste_target_months: tuple[str, ...] | None = tuple(month_labels) if month_labels else None
-reference_date = pd.NaT
-if "MesData" in perf_df.columns:
-    mes_data_series = pd.to_datetime(perf_df["MesData"], errors="coerce").dropna()
-    if not mes_data_series.empty:
-        reference_date = mes_data_series.max()
-
-if pd.isna(reference_date):
-    reference_date = REAJUSTE_BASE_DATE_FALLBACK
 
 if incc_series_path.exists():
     try:
@@ -479,7 +471,7 @@ if incc_series_path.exists():
             perf_df,
             str(incc_series_path),
             reajuste_target_months,
-            pd.Timestamp(reference_date).strftime("%Y-%m-%d"),
+            REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
         )
     except Exception as exc:
         reajuste_error = f"Falha ao preparar reajuste INCC: {exc}"
@@ -855,7 +847,7 @@ else:
 st.subheader("Reajuste INCC (agregado pelos filtros)")
 st.caption(
     "Cada ponto usa o VGV Oferta Final do proprio mes. "
-    "O reajuste aplica fator ate o mes de referencia (ultimo mes disponivel da serie)."
+    "O reajuste aplica fator ate a base fixa de dezembro/2025."
 )
 
 if reajuste_error:
@@ -911,8 +903,8 @@ else:
     try:
         incc_audit = _load_incc_series(str(incc_series_path))
         if not incc_audit.empty:
-            di_end = base_di_date if isinstance(base_di_date, pd.Timestamp) else pd.to_datetime(reference_row["MesData"], errors="coerce")
-            m_end = base_m_date if isinstance(base_m_date, pd.Timestamp) else pd.to_datetime(reference_row["MesData"], errors="coerce")
+            di_end = base_di_date if isinstance(base_di_date, pd.Timestamp) else REAJUSTE_BASE_DATE
+            m_end = base_m_date if isinstance(base_m_date, pd.Timestamp) else REAJUSTE_BASE_DATE
 
             for idx, row in audit_frame.iterrows():
                 factor_di = _compound_factor_from_index(incc_audit, "INCC-DI", row["MesData"], di_end)
