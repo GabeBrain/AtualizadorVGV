@@ -22,7 +22,16 @@ DEFAULT_BLOCK_METRICS = [
 
 
 def normalize_text(value: Any) -> str:
-    text = str(value or "").strip().lower()
+    if value is None:
+        return ""
+
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+
+    text = str(value).strip().lower()
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return text

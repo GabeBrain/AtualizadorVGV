@@ -150,6 +150,14 @@ def _clean_options(series: pd.Series) -> list[str]:
 
 
 def _status_color(status_value: Any) -> list[int]:
+    if status_value is None:
+        return [31, 78, 122, 170]
+    try:
+        if pd.isna(status_value):
+            return [31, 78, 122, 170]
+    except Exception:
+        pass
+
     status_norm = normalize_text(status_value)
     if "esgotado" in status_norm:
         return [176, 0, 32, 180]
