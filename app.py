@@ -13,8 +13,7 @@ from src.theme import apply_brain_theme, render_sidebar_menu
 from src.vgv_parser import extract_present_amenities, normalize_text, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
-REAJUSTE_TARGET_MONTHS = ("01/2021", "02/2021", "03/2021")
-REAJUSTE_BASE_DATE = pd.Timestamp("2025-12-01")
+REAJUSTE_BASE_DATE_FALLBACK = pd.Timestamp("2025-12-01")
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":bar_chart:")
 apply_brain_theme()
@@ -283,7 +282,7 @@ def _compound_factor_from_index(
 def _build_reajuste_dataset(
     perf_source: pd.DataFrame,
     incc_path_text: str,
-    target_months: tuple[str, ...],
+    target_months: tuple[str, ...] | None,
     base_date_text: str,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     empty_columns = [
@@ -305,7 +304,7 @@ def _build_reajuste_dataset(
 
     base_date = pd.to_datetime(base_date_text, errors="coerce")
     if pd.isna(base_date):
-        base_date = REAJUSTE_BASE_DATE
+        base_date = REAJUSTE_BASE_DATE_FALLBACK
 
     base_di, base_di_date = _resolve_base_index(incc_df, "INCC-DI", base_date)
     base_m, base_m_date = _resolve_base_index(incc_df, "INCC-M", base_date)
@@ -315,6 +314,8 @@ def _build_reajuste_dataset(
         "base_m": base_m,
         "base_di_date": base_di_date,
         "base_m_date": base_m_date,
+        "reference_date": pd.Timestamp(base_date),
+        "target_months": list(target_months) if target_months else [],
     }
 
     perf = perf_source.copy()
@@ -337,7 +338,8 @@ def _build_reajuste_dataset(
 
     perf[vgv_col] = pd.to_numeric(perf[vgv_col], errors="coerce")
     perf = perf.dropna(subset=["MesData", vgv_col])
-    perf = perf[perf["Mes"].isin(list(target_months))].copy()
+    if target_months:
+        perf = perf[perf["Mes"].isin(list(target_months))].copy()
 
     if perf.empty:
         return empty_frame, meta
@@ -461,13 +463,23 @@ reajuste_meta: dict[str, Any] = {}
 reajuste_error: str | None = None
 incc_series_path = Path(__file__).resolve().parent / "assets" / "INCC_Series_MeDI.xlsx"
 
+reajuste_target_months: tuple[str, ...] | None = tuple(month_labels) if month_labels else None
+reference_date = pd.NaT
+if "MesData" in perf_df.columns:
+    mes_data_series = pd.to_datetime(perf_df["MesData"], errors="coerce").dropna()
+    if not mes_data_series.empty:
+        reference_date = mes_data_series.max()
+
+if pd.isna(reference_date):
+    reference_date = REAJUSTE_BASE_DATE_FALLBACK
+
 if incc_series_path.exists():
     try:
         reajuste_perf, reajuste_meta = _build_reajuste_dataset(
             perf_df,
             str(incc_series_path),
-            REAJUSTE_TARGET_MONTHS,
-            REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
+            reajuste_target_months,
+            pd.Timestamp(reference_date).strftime("%Y-%m-%d"),
         )
     except Exception as exc:
         reajuste_error = f"Falha ao preparar reajuste INCC: {exc}"
@@ -842,14 +854,14 @@ else:
 
 st.subheader("Reajuste INCC (agregado pelos filtros)")
 st.caption(
-    "Meses-alvo do reajuste: 01/2021 a 03/2021 | Base de atualizacao: 12/2025. "
-    "Os valores seguem exatamente o recorte dos filtros atuais."
+    "Cada ponto usa o VGV Oferta Final do proprio mes. "
+    "O reajuste aplica fator ate o mes de referencia (ultimo mes disponivel da serie)."
 )
 
 if reajuste_error:
     st.info(reajuste_error)
 elif filtered_reajuste.empty:
-    st.info("Sem dados de reajuste para os filtros atuais e meses-alvo (01/2021 a 03/2021).")
+    st.info("Sem dados de reajuste para os filtros atuais.")
 else:
     reajuste_monthly = (
         filtered_reajuste.groupby(["Mes", "MesData"], as_index=False)
@@ -863,29 +875,31 @@ else:
         .sort_values("MesData")
     )
 
+    reference_row = reajuste_monthly.iloc[-1]
+    reference_month_label = str(reference_row.get("Mes", "-"))
+    start_month_label = str(reajuste_monthly.iloc[0].get("Mes", "-"))
+
     target_label = (
         filtered_empreendimentos[0]
         if len(filtered_empreendimentos) == 1
         else f"{len(filtered_empreendimentos)} (filtros)"
     )
 
+    current_ref_di = reference_row.get("VGV Corrigido INCC-DI")
+    current_ref_m = reference_row.get("VGV Corrigido INCC-M")
+
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("Empreendimento", target_label)
-    r2.metric("Soma nominal", _format_brl(reajuste_monthly["VGV Nominal"].sum()))
-    r3.metric(
-        "Soma corrigida INCC-DI",
-        _format_brl(reajuste_monthly["VGV Corrigido INCC-DI"].sum(min_count=1)),
-    )
-    r4.metric(
-        "Soma corrigida INCC-M",
-        _format_brl(reajuste_monthly["VGV Corrigido INCC-M"].sum(min_count=1)),
-    )
+    r2.metric("Nominal (mes ref)", _format_brl(reference_row.get("VGV Nominal")))
+    r3.metric("Corrigido DI (mes ref)", _format_brl(current_ref_di))
+    r4.metric("Corrigido M (mes ref)", _format_brl(current_ref_m))
 
     base_di_date = reajuste_meta.get("base_di_date")
     base_m_date = reajuste_meta.get("base_m_date")
     base_di_label = base_di_date.strftime("%m/%Y") if isinstance(base_di_date, pd.Timestamp) else "-"
     base_m_label = base_m_date.strftime("%m/%Y") if isinstance(base_m_date, pd.Timestamp) else "-"
     st.caption(
+        f"Serie exibida: {start_month_label} ate {reference_month_label} | "
         f"Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
     )
 
@@ -897,8 +911,8 @@ else:
     try:
         incc_audit = _load_incc_series(str(incc_series_path))
         if not incc_audit.empty:
-            di_end = base_di_date if isinstance(base_di_date, pd.Timestamp) else REAJUSTE_BASE_DATE
-            m_end = base_m_date if isinstance(base_m_date, pd.Timestamp) else REAJUSTE_BASE_DATE
+            di_end = base_di_date if isinstance(base_di_date, pd.Timestamp) else pd.to_datetime(reference_row["MesData"], errors="coerce")
+            m_end = base_m_date if isinstance(base_m_date, pd.Timestamp) else pd.to_datetime(reference_row["MesData"], errors="coerce")
 
             for idx, row in audit_frame.iterrows():
                 factor_di = _compound_factor_from_index(incc_audit, "INCC-DI", row["MesData"], di_end)
@@ -913,18 +927,27 @@ else:
     except Exception as exc:
         audit_warning = f"Nao foi possivel calcular auditoria composta: {exc}"
 
-    sum_di_current = reajuste_monthly["VGV Corrigido INCC-DI"].sum(min_count=1)
-    sum_di_comp = audit_frame["VGV Corrigido INCC-DI (composto)"].sum(min_count=1)
-    sum_m_current = reajuste_monthly["VGV Corrigido INCC-M"].sum(min_count=1)
-    sum_m_comp = audit_frame["VGV Corrigido INCC-M (composto)"].sum(min_count=1)
+    audit_ref = audit_frame[audit_frame["MesData"] == reference_row["MesData"]]
+    if audit_ref.empty:
+        comp_ref_di = pd.NA
+        comp_ref_m = pd.NA
+    else:
+        comp_ref_di = audit_ref.iloc[-1].get("VGV Corrigido INCC-DI (composto)")
+        comp_ref_m = audit_ref.iloc[-1].get("VGV Corrigido INCC-M (composto)")
 
     with st.expander("Resumo metodologico do reajuste", expanded=False):
         st.markdown(
             "\n".join(
                 [
-                    "- Metodo atual: usa razao direta entre indice base e indice do mes (Indice_base / Indice_mes).",
-                    "- Metodo auditoria (composto): encadeia variacao mensal de cada mes ate a base.",
-                    "- Em series consistentes, os dois metodos devem convergir (diferencas pequenas por arredondamento/base faltante).",
+                    "**Definicao das metricas exibidas**",
+                    "- Empreendimento: 1 nome selecionado ou N (filtros).",
+                    "- Nominal (mes ref): VGV Oferta Final agregado no ultimo mes da serie exibida.",
+                    "- Corrigido DI/M (mes ref): valor do mes de referencia corrigido pelo respectivo indice.",
+                    "",
+                    "**Comparacao metodologica**",
+                    "- Metodo atual: razao direta (Indice_base / Indice_mes).",
+                    "- Metodo composto (auditoria): encadeia fatores mensais ate a base.",
+                    "- Em series consistentes, os dois metodos tendem a convergir (diferencas pequenas por arredondamento e faltas de base).",
                 ]
             )
         )
@@ -933,12 +956,12 @@ else:
 
         d1, d2 = st.columns(2)
         d1.metric(
-            "DI: diferenca (composto - atual)",
-            _format_brl((sum_di_comp - sum_di_current) if pd.notna(sum_di_comp) and pd.notna(sum_di_current) else pd.NA),
+            "DI: diferenca no mes ref (composto - atual)",
+            _format_brl((comp_ref_di - current_ref_di) if pd.notna(comp_ref_di) and pd.notna(current_ref_di) else pd.NA),
         )
         d2.metric(
-            "M: diferenca (composto - atual)",
-            _format_brl((sum_m_comp - sum_m_current) if pd.notna(sum_m_comp) and pd.notna(sum_m_current) else pd.NA),
+            "M: diferenca no mes ref (composto - atual)",
+            _format_brl((comp_ref_m - current_ref_m) if pd.notna(comp_ref_m) and pd.notna(current_ref_m) else pd.NA),
         )
 
     reajuste_plot = reajuste_monthly.melt(
