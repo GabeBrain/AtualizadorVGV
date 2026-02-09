@@ -72,6 +72,24 @@ def _format_brl(value: Any) -> str:
     return "R$ " + _format_decimal(value)
 
 
+def _display_value_text(value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        if pd.isna(value):
+            return "-"
+    except Exception:
+        pass
+
+    if isinstance(value, bytes):
+        try:
+            return value.decode("utf-8", errors="replace")
+        except Exception:
+            return str(value)
+
+    return str(value)
+
+
 def _to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -975,8 +993,9 @@ else:
         extra_m["Serie"] = "VGV corrigido (INCC-M composto)"
         reajuste_plot = pd.concat([reajuste_plot, extra_m], ignore_index=True)
 
+    reajuste_plot["Valor"] = pd.to_numeric(reajuste_plot["Valor"], errors="coerce")
     reajuste_plot = reajuste_plot.dropna(subset=["Valor"])
-    reajuste_plot["Serie"] = reajuste_plot["Serie"].replace(
+    reajuste_plot["Serie"] = reajuste_plot["Serie"].astype(str).replace(
         {
             "VGV Nominal": "VGV Oferta Final (nominal)",
             "VGV Corrigido INCC-DI": "VGV corrigido (INCC-DI)",
@@ -1061,7 +1080,10 @@ else:
                 ficha_data.append({"Campo": field, "Valor": value})
 
             if ficha_data:
-                st.dataframe(pd.DataFrame(ficha_data), use_container_width=True, hide_index=True)
+                ficha_df = pd.DataFrame(ficha_data)
+                if "Valor" in ficha_df.columns:
+                    ficha_df["Valor"] = ficha_df["Valor"].map(_display_value_text)
+                st.dataframe(ficha_df, use_container_width=True, hide_index=True)
             else:
                 st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
 
