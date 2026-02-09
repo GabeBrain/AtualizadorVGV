@@ -866,7 +866,7 @@ else:
     target_label = (
         filtered_empreendimentos[0]
         if len(filtered_empreendimentos) == 1
-        else f"{len(filtered_empreendimentos)} empreendimentos (filtros)"
+        else f"{len(filtered_empreendimentos)} (filtros)"
     )
 
     r1, r2, r3, r4 = st.columns(4)
