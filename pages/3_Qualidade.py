@@ -23,7 +23,7 @@ if analysis_df is None or analysis_df.empty:
 work_df = analysis_df.copy()
 
 st.subheader("Qualidade por coluna")
-st.dataframe(null_report(work_df), use_container_width=True, hide_index=True)
+st.dataframe(null_report(work_df), width="stretch", hide_index=True)
 
 dup_count = 0
 if "id" in work_df.columns:
@@ -58,7 +58,7 @@ if drop_future_dates and "date" in clean_df.columns:
     clean_df = clean_df[(clean_df["date"].isna()) | (clean_df["date"] <= today)]
 
 st.write(f"Linhas apos limpeza: `{len(clean_df):,}`".replace(",", "."))
-st.dataframe(clean_df.head(200), use_container_width=True, hide_index=True)
+st.dataframe(clean_df.head(200), width="stretch", hide_index=True)
 
 csv_data = clean_df.to_csv(index=False).encode("utf-8")
 st.download_button(

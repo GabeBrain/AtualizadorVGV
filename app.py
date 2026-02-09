@@ -394,10 +394,10 @@ with st.expander("Fonte de dados", expanded=True):
     b1, b2, _ = st.columns([1, 1, 2])
     use_sample = b1.button(
         "Usar exemplo de assets",
-        use_container_width=True,
+        width="stretch",
         disabled=not sample_path.exists(),
     )
-    clear_source = b2.button("Limpar", use_container_width=True)
+    clear_source = b2.button("Limpar", width="stretch")
 
     if uploaded_file is not None:
         st.session_state["source_mode"] = "upload"
@@ -739,13 +739,13 @@ else:
     try:
         map_event = st.pydeck_chart(
             deck,
-            use_container_width=True,
+            width="stretch",
             on_select="rerun",
             selection_mode="single-object",
             key="empreendimento_map",
         )
     except TypeError:
-        st.pydeck_chart(deck, use_container_width=True, key="empreendimento_map_static")
+        st.pydeck_chart(deck, width="stretch", key="empreendimento_map_static")
 
     point_options = points["Empreendimento"].astype(str).tolist()
 
@@ -839,7 +839,7 @@ else:
                 )
                 .properties(height=320)
             )
-            st.altair_chart(vgv_chart, use_container_width=True)
+            st.altair_chart(vgv_chart, width="stretch")
 
         if estoque_col and estoque_col in monthly.columns and vendas_col and vendas_col in monthly.columns:
             bar = (
@@ -860,7 +860,7 @@ else:
                     tooltip=["Mes", alt.Tooltip(f"{vendas_col}:Q", format=",.0f")],
                 )
             )
-            st.altair_chart((bar + line).properties(height=320), use_container_width=True)
+            st.altair_chart((bar + line).properties(height=320), width="stretch")
 
 st.subheader("Reajuste INCC (agregado pelos filtros)")
 st.caption(
@@ -1014,7 +1014,7 @@ else:
         )
         .properties(height=320)
     )
-    st.altair_chart(reajuste_chart, use_container_width=True)
+    st.altair_chart(reajuste_chart, width="stretch")
 
 # Ficha + amenidades apenas quando houver 1 empreendimento no filtro
 if len(filtered_empreendimentos) != 1:
@@ -1083,7 +1083,7 @@ else:
                 ficha_df = pd.DataFrame(ficha_data)
                 if "Valor" in ficha_df.columns:
                     ficha_df["Valor"] = ficha_df["Valor"].map(_display_value_text)
-                st.dataframe(ficha_df, use_container_width=True, hide_index=True)
+                st.dataframe(ficha_df, width="stretch", hide_index=True)
             else:
                 st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
 
@@ -1149,13 +1149,13 @@ export_col1.download_button(
     data=all_bytes,
     file_name="dados_vgv_todos_empreendimentos.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True,
+    width="stretch",
 )
 export_col2.download_button(
     "Exportar: aplicar filtros atuais",
     data=filtered_bytes,
     file_name="dados_vgv_filtros_atuais.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True,
+    width="stretch",
 )
 

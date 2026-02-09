@@ -160,7 +160,7 @@ with st.container(border=True):
 
     nav_left, nav_right, _ = st.columns([1.2, 2.4, 3.4])
     with nav_left:
-        if st.button("Voltar para analise", use_container_width=True):
+        if st.button("Voltar para analise", width="stretch"):
             st.switch_page("app.py")
 
     export_button_placeholder = nav_right.empty()
@@ -316,7 +316,7 @@ export_button_placeholder.download_button(
     file_name="reajuste_incc_todos_empreendimentos.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     type="primary",
-    use_container_width=True,
+    width="stretch",
 )
 
 monthly = monthly.merge(incc_df, on="MesData", how="left")
@@ -422,10 +422,10 @@ with st.container(border=True):
             )
             .properties(height=360)
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
 
     with tab_tabela:
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, width="stretch", hide_index=True)
 
     with tab_export:
         st.caption(
@@ -438,4 +438,4 @@ with st.container(border=True):
                 if col == "Empreendimento":
                     continue
                 preview_df[col] = preview_df[col].map(_format_brl)
-            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+            st.dataframe(preview_df, width="stretch", hide_index=True)

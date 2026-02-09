@@ -102,4 +102,4 @@ with st.expander("Ver colunas detectadas", expanded=False):
     st.write("Categoriais:", profile.categorical_columns)
 
 st.subheader("Preview")
-st.dataframe(raw_df.head(200), use_container_width=True, hide_index=True)
+st.dataframe(raw_df.head(200), width="stretch", hide_index=True)

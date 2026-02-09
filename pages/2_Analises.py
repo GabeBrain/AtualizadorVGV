@@ -46,7 +46,7 @@ if "value" in work_df.columns and work_df["value"].notna().any():
         )
         .properties(height=280)
     )
-    st.altair_chart(hist, use_container_width=True)
+    st.altair_chart(hist, width="stretch")
 
 if "date" in work_df.columns and "value" in work_df.columns:
     daily = daily_aggregation(work_df)
@@ -62,7 +62,7 @@ if "date" in work_df.columns and "value" in work_df.columns:
             )
             .properties(height=280)
         )
-        st.altair_chart(line, use_container_width=True)
+        st.altair_chart(line, width="stretch")
 
 category_col = None
 if "category" in work_df.columns:
@@ -83,7 +83,7 @@ if category_col is not None:
         )
         .properties(height=320)
     )
-    st.altair_chart(bars, use_container_width=True)
+    st.altair_chart(bars, width="stretch")
 
 with st.expander("Preview dos dados mapeados", expanded=False):
-    st.dataframe(work_df.head(200), use_container_width=True, hide_index=True)
+    st.dataframe(work_df.head(200), width="stretch", hide_index=True)
