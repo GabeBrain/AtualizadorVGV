@@ -154,15 +154,16 @@ def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Tim
     return float(row[column]), pd.Timestamp(row["MesData"])
 
 
-st.title("Reajuste de VGV a valor presente")
-st.caption("Atualizacao do VGV Oferta Final para 12/2025 com INCC-DI e INCC-M.")
+with st.container(border=True):
+    st.title("Reajuste de VGV a valor presente")
+    st.caption("Atualizacao do VGV Oferta Final para 12/2025 com INCC-DI e INCC-M.")
 
-nav_left, nav_right, _ = st.columns([1.2, 2.4, 3.4])
-with nav_left:
-    if st.button("Voltar para analise", use_container_width=True):
-        st.switch_page("app.py")
+    nav_left, nav_right, _ = st.columns([1.2, 2.4, 3.4])
+    with nav_left:
+        if st.button("Voltar para analise", use_container_width=True):
+            st.switch_page("app.py")
 
-export_button_placeholder = nav_right.empty()
+    export_button_placeholder = nav_right.empty()
 
 sample_path = Path(__file__).resolve().parents[1] / "assets" / "tabelaEmpreendimentoReduzida.xlsx"
 source_mode = st.session_state.get("source_mode")
@@ -214,19 +215,26 @@ if not empreendimento_options:
 preferred_emp = st.session_state.get(REAJUSTE_EMP_KEY) or st.session_state.get("selected_empreendimento")
 default_index = empreendimento_options.index(preferred_emp) if preferred_emp in empreendimento_options else 0
 
-selected_empreendimento = st.selectbox(
-    "Empreendimento",
-    options=empreendimento_options,
-    index=default_index,
-)
-st.session_state[REAJUSTE_EMP_KEY] = selected_empreendimento
-st.session_state["selected_empreendimento"] = selected_empreendimento
+with st.container(border=True):
+    st.subheader("Parametros de analise")
+    st.caption("Os calculos usam os meses alvo 01/2021, 02/2021 e 03/2021.")
 
-series_mode = st.radio(
-    "Serie para comparacao no grafico",
-    options=["Comparar ambos", "INCC-DI", "INCC-M"],
-    horizontal=True,
-)
+    control_left, control_right = st.columns([2, 3])
+    with control_left:
+        selected_empreendimento = st.selectbox(
+            "Empreendimento",
+            options=empreendimento_options,
+            index=default_index,
+        )
+        st.session_state[REAJUSTE_EMP_KEY] = selected_empreendimento
+        st.session_state["selected_empreendimento"] = selected_empreendimento
+
+    with control_right:
+        series_mode = st.radio(
+            "Serie para comparacao no grafico",
+            options=["Comparar ambos", "INCC-DI", "INCC-M"],
+            horizontal=True,
+        )
 
 perf_emp = perf_df.copy()
 perf_emp[empreendimento_col] = perf_emp[empreendimento_col].astype(str)
@@ -324,38 +332,42 @@ else:
     monthly["VGV Corrigido INCC-M"] = pd.NA
 
 missing_months = [month for month in TARGET_MONTH_LABELS if month not in set(monthly["Mes"].tolist())]
-if missing_months:
-    st.warning("Meses sem dados no empreendimento: " + ", ".join(missing_months))
 
-if base_di_date is not None and base_di_date != PRESENT_BASE_DATE:
-    st.warning(f"Base INCC-DI usada: {base_di_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
-if base_m_date is not None and base_m_date != PRESENT_BASE_DATE:
-    st.warning(f"Base INCC-M usada: {base_m_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
+with st.container(border=True):
+    st.subheader("Resumo do reajuste")
 
-with st.expander("Logica aplicada no calculo", expanded=False):
-    st.markdown(
-        "\n".join(
-            [
-                "1. Parte do VGV Oferta Final mensal de cada linha e soma por mes.",
-                "2. Filtra os meses de 01/2021, 02/2021 e 03/2021.",
-                "3. Corrige para valor presente em 12/2025 com formula:",
-                "   VGV_corrigido = VGV_nominal * (Indice_12/2025 / Indice_mes).",
-                "4. Permite comparar nominal vs corrigido por INCC-DI e/ou INCC-M.",
-            ]
-        )
+    if missing_months:
+        st.warning("Meses sem dados no empreendimento: " + ", ".join(missing_months))
+
+    if base_di_date is not None and base_di_date != PRESENT_BASE_DATE:
+        st.warning(f"Base INCC-DI usada: {base_di_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
+    if base_m_date is not None and base_m_date != PRESENT_BASE_DATE:
+        st.warning(f"Base INCC-M usada: {base_m_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Empreendimento", selected_empreendimento)
+    m2.metric("Soma nominal", _format_brl(monthly["VGV Nominal"].sum()))
+    m3.metric("Soma corrigida INCC-DI", _format_brl(monthly["VGV Corrigido INCC-DI"].sum(min_count=1)))
+    m4.metric("Soma corrigida INCC-M", _format_brl(monthly["VGV Corrigido INCC-M"].sum(min_count=1)))
+
+    base_di_label = base_di_date.strftime("%m/%Y") if base_di_date is not None else "-"
+    base_m_label = base_m_date.strftime("%m/%Y") if base_m_date is not None else "-"
+    st.caption(
+        f"Base alvo: 12/2025 | Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
     )
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Empreendimento", selected_empreendimento)
-m2.metric("Soma nominal", _format_brl(monthly["VGV Nominal"].sum()))
-m3.metric("Soma corrigida INCC-DI", _format_brl(monthly["VGV Corrigido INCC-DI"].sum(min_count=1)))
-m4.metric("Soma corrigida INCC-M", _format_brl(monthly["VGV Corrigido INCC-M"].sum(min_count=1)))
-
-base_di_label = base_di_date.strftime("%m/%Y") if base_di_date is not None else "-"
-base_m_label = base_m_date.strftime("%m/%Y") if base_m_date is not None else "-"
-st.caption(
-    f"Base alvo: 12/2025 | Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
-)
+    with st.expander("Logica aplicada no calculo", expanded=False):
+        st.markdown(
+            "\n".join(
+                [
+                    "1. Parte do VGV Oferta Final mensal de cada linha e soma por mes.",
+                    "2. Filtra os meses de 01/2021, 02/2021 e 03/2021.",
+                    "3. Corrige para valor presente em 12/2025 com formula:",
+                    "   VGV_corrigido = VGV_nominal * (Indice_12/2025 / Indice_mes).",
+                    "4. Permite comparar nominal vs corrigido por INCC-DI e/ou INCC-M.",
+                ]
+            )
+        )
 
 plot_columns = ["VGV Nominal"]
 label_map = {"VGV Nominal": "VGV Oferta Final (nominal)"}
@@ -377,21 +389,6 @@ plot_df = monthly[["Mes", "MesData", *plot_columns]].melt(
 plot_df = plot_df.dropna(subset=["Valor"])
 plot_df["Serie"] = plot_df["Serie"].map(label_map).fillna(plot_df["Serie"])
 
-chart = (
-    alt.Chart(plot_df)
-    .mark_line(point=True)
-    .encode(
-        x=alt.X("MesData:T", title="Mes"),
-        y=alt.Y("Valor:Q", title="VGV (R$)"),
-        color=alt.Color("Serie:N", title="Serie"),
-        tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
-    )
-    .properties(height=360)
-)
-st.altair_chart(chart, use_container_width=True)
-
-st.subheader("Tabela de apoio")
-
 display_df = monthly[
     [
         "Mes",
@@ -409,17 +406,36 @@ for column in ["VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"]:
 for column in ["INCC-DI", "INCC-M"]:
     display_df[column] = display_df[column].map(_format_decimal)
 
-st.dataframe(display_df, use_container_width=True, hide_index=True)
+with st.container(border=True):
+    st.subheader("Visualizacoes")
+    tab_series, tab_tabela, tab_export = st.tabs(["Serie historica", "Tabela de apoio", "Exportacao"])
 
-st.caption(
-    "Exportador no topo: arquivo com todos os empreendimentos e 3 blocos mensais "
-    "(nominal, corrigido INCC-DI e corrigido INCC-M)."
-)
+    with tab_series:
+        chart = (
+            alt.Chart(plot_df)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("MesData:T", title="Mes"),
+                y=alt.Y("Valor:Q", title="VGV (R$)"),
+                color=alt.Color("Serie:N", title="Serie"),
+                tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
+            )
+            .properties(height=360)
+        )
+        st.altair_chart(chart, use_container_width=True)
 
-with st.expander("Preview do Excel de exportacao (todos os empreendimentos)", expanded=False):
-    preview_df = export_df.copy()
-    for col in preview_df.columns:
-        if col == "Empreendimento":
-            continue
-        preview_df[col] = preview_df[col].map(_format_brl)
-    st.dataframe(preview_df, use_container_width=True, hide_index=True)
+    with tab_tabela:
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    with tab_export:
+        st.caption(
+            "Exportador no topo: arquivo com todos os empreendimentos e 3 blocos mensais "
+            "(nominal, corrigido INCC-DI e corrigido INCC-M)."
+        )
+        with st.expander("Preview do Excel de exportacao (todos os empreendimentos)", expanded=False):
+            preview_df = export_df.copy()
+            for col in preview_df.columns:
+                if col == "Empreendimento":
+                    continue
+                preview_df[col] = preview_df[col].map(_format_brl)
+            st.dataframe(preview_df, use_container_width=True, hide_index=True)
