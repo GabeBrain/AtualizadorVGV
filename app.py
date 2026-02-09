@@ -73,6 +73,15 @@ def _format_brl(value: Any) -> str:
     return "R$ " + _format_decimal(value)
 
 
+def _to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for sheet_name, frame in sheets.items():
+            safe_name = str(sheet_name)[:31] or "Sheet1"
+            frame.to_excel(writer, index=False, sheet_name=safe_name)
+    return output.getvalue()
+
+
 def _selection_payload(event: Any) -> Any:
     if event is None:
         return None
@@ -865,104 +874,137 @@ if len(filtered_empreendimentos) != 1:
         "Ficha do empreendimento e amenidades ficam disponiveis quando o filtro retorna um unico empreendimento. "
         "Dica: clique em um ponto no mapa para aplicar esse filtro automaticamente."
     )
-    st.stop()
+else:
+    selected_empreendimento = filtered_empreendimentos[0]
+    st.session_state["selected_empreendimento"] = selected_empreendimento
 
-selected_empreendimento = filtered_empreendimentos[0]
-st.session_state["selected_empreendimento"] = selected_empreendimento
-
-selected_rows = filtered_base[filtered_base[empreendimento_col].astype(str) == selected_empreendimento].copy()
-if selected_rows.empty:
-    st.info("Nao foi possivel montar detalhes para o empreendimento selecionado.")
-    st.stop()
-
-row_for_details = selected_rows.sort_values(by=tipologia_col).iloc[0] if tipologia_col else selected_rows.iloc[0]
-all_columns = list(base_df.columns)
-
-with st.expander("Ficha do empreendimento", expanded=False):
-    ficha_fields = [
-        "Empreendimento",
-        "Endereco",
-        "Numero",
-        "Bairro",
-        "CEP",
-        "Cidade",
-        "Estado",
-        "Latitude",
-        "Longitude",
-        "Incorporadora 1",
-        "Incorporadora 2",
-        "Incorporadora 3",
-        "Data de Lancamento",
-        "Data de Entrega",
-        "Tipo",
-        "Quartos",
-        "Garagem",
-        "Torres",
-        "Elevadores",
-        "Unidades por Tipologia",
-        "M2 Privativo",
-        "Padrao",
-        "Tipologia",
-        "Oferta Lancada",
-    ]
-
-    ficha_data: list[dict[str, Any]] = []
-    for field in ficha_fields:
-        original_col = _find_column(all_columns, [field])
-        if not original_col:
-            continue
-
-        value = row_for_details.get(original_col)
-        if "data" in normalize_text(field):
-            if pd.notna(value):
-                value = pd.to_datetime(value, errors="coerce")
-                value = value.strftime("%d/%m/%Y") if pd.notna(value) else "-"
-            else:
-                value = "-"
-        elif isinstance(value, float) and pd.isna(value):
-            value = "-"
-
-        ficha_data.append({"Campo": field, "Valor": value})
-
-    if ficha_data:
-        st.dataframe(pd.DataFrame(ficha_data), use_container_width=True, hide_index=True)
+    selected_rows = filtered_base[filtered_base[empreendimento_col].astype(str) == selected_empreendimento].copy()
+    if selected_rows.empty:
+        st.info("Nao foi possivel montar detalhes para o empreendimento selecionado.")
     else:
-        st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
+        row_for_details = selected_rows.sort_values(by=tipologia_col).iloc[0] if tipologia_col else selected_rows.iloc[0]
+        all_columns = list(base_df.columns)
 
-with st.expander("Amenidades presentes (Sim)", expanded=False):
-    if not amenity_columns:
-        st.info("Nao foi possivel detectar colunas de amenidades automaticamente.")
-    else:
-        merged_groups = {"Interna": set(), "Externa": set(), "Comercial": set(), "Geral": set()}
-        for _, row in selected_rows.iterrows():
-            row_groups = extract_present_amenities(row, amenity_columns)
-            for group_name, values in row_groups.items():
-                merged_groups.setdefault(group_name, set()).update(values)
+        with st.expander("Ficha do empreendimento", expanded=False):
+            ficha_fields = [
+                "Empreendimento",
+                "Endereco",
+                "Numero",
+                "Bairro",
+                "CEP",
+                "Cidade",
+                "Estado",
+                "Latitude",
+                "Longitude",
+                "Incorporadora 1",
+                "Incorporadora 2",
+                "Incorporadora 3",
+                "Data de Lancamento",
+                "Data de Entrega",
+                "Tipo",
+                "Quartos",
+                "Garagem",
+                "Torres",
+                "Elevadores",
+                "Unidades por Tipologia",
+                "M2 Privativo",
+                "Padrao",
+                "Tipologia",
+                "Oferta Lancada",
+            ]
 
-        amenity_groups = {
-            group_name: sorted(values, key=normalize_text)
-            for group_name, values in merged_groups.items()
-        }
-        total_present = sum(len(values) for values in amenity_groups.values())
+            ficha_data: list[dict[str, Any]] = []
+            for field in ficha_fields:
+                original_col = _find_column(all_columns, [field])
+                if not original_col:
+                    continue
 
-        if total_present == 0:
-            st.info("Nenhuma amenidade marcada como 'Sim' para o empreendimento filtrado.")
-        else:
-            g1, g2, g3, g4 = st.columns(4)
-            col_map = {
-                "Interna": g1,
-                "Externa": g2,
-                "Comercial": g3,
-                "Geral": g4,
-            }
-
-            for group_name in ("Interna", "Externa", "Comercial", "Geral"):
-                values = amenity_groups.get(group_name, [])
-                with col_map[group_name]:
-                    st.markdown(f"**{group_name} ({len(values)})**")
-                    if not values:
-                        st.caption("-")
+                value = row_for_details.get(original_col)
+                if "data" in normalize_text(field):
+                    if pd.notna(value):
+                        value = pd.to_datetime(value, errors="coerce")
+                        value = value.strftime("%d/%m/%Y") if pd.notna(value) else "-"
                     else:
-                        st.markdown("\n".join(f"- {item}" for item in values))
+                        value = "-"
+                elif isinstance(value, float) and pd.isna(value):
+                    value = "-"
 
+                ficha_data.append({"Campo": field, "Valor": value})
+
+            if ficha_data:
+                st.dataframe(pd.DataFrame(ficha_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
+
+        with st.expander("Amenidades presentes (Sim)", expanded=False):
+            if not amenity_columns:
+                st.info("Nao foi possivel detectar colunas de amenidades automaticamente.")
+            else:
+                merged_groups = {"Interna": set(), "Externa": set(), "Comercial": set(), "Geral": set()}
+                for _, row in selected_rows.iterrows():
+                    row_groups = extract_present_amenities(row, amenity_columns)
+                    for group_name, values in row_groups.items():
+                        merged_groups.setdefault(group_name, set()).update(values)
+
+                amenity_groups = {
+                    group_name: sorted(values, key=normalize_text)
+                    for group_name, values in merged_groups.items()
+                }
+                total_present = sum(len(values) for values in amenity_groups.values())
+
+                if total_present == 0:
+                    st.info("Nenhuma amenidade marcada como 'Sim' para o empreendimento filtrado.")
+                else:
+                    g1, g2, g3, g4 = st.columns(4)
+                    col_map = {
+                        "Interna": g1,
+                        "Externa": g2,
+                        "Comercial": g3,
+                        "Geral": g4,
+                    }
+
+                    for group_name in ("Interna", "Externa", "Comercial", "Geral"):
+                        values = amenity_groups.get(group_name, [])
+                        with col_map[group_name]:
+                            st.markdown(f"**{group_name} ({len(values)})**")
+                            if not values:
+                                st.caption("-")
+                            else:
+                                st.markdown("\n".join(f"- {item}" for item in values))
+
+
+st.subheader("Exportar dados")
+st.caption(
+    "Escolha entre exportar todos os empreendimentos da base carregada ou somente o recorte atual dos filtros."
+)
+
+all_export_sheets = {
+    "Empreendimentos": base_enriched,
+    "Performance_Mensal": perf_df,
+    "Reajuste_INCC": reajuste_perf,
+}
+filtered_export_sheets = {
+    "Empreendimentos": filtered_base,
+    "Performance_Mensal": filtered_perf,
+    "Reajuste_INCC": filtered_reajuste,
+}
+
+all_bytes = _to_excel_bytes(all_export_sheets)
+filtered_bytes = _to_excel_bytes(filtered_export_sheets)
+
+export_col1, export_col2 = st.columns(2)
+export_col1.download_button(
+    "Exportar: todos os empreendimentos",
+    data=all_bytes,
+    file_name="dados_vgv_todos_empreendimentos.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
+export_col2.download_button(
+    "Exportar: aplicar filtros atuais",
+    data=filtered_bytes,
+    file_name="dados_vgv_filtros_atuais.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
 
