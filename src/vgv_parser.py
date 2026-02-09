@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 import unicodedata
 from io import BytesIO
 from typing import Any
@@ -38,7 +39,13 @@ def normalize_text(value: Any) -> str:
 
 
 def _read_raw_excel(source: Any) -> pd.DataFrame:
-    df = pd.read_excel(source, sheet_name=0)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Workbook contains no default style, apply openpyxl's default",
+            category=UserWarning,
+        )
+        df = pd.read_excel(source, sheet_name=0)
     df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
     df.columns = [str(col).strip() for col in df.columns]
     return df.reset_index(drop=True)

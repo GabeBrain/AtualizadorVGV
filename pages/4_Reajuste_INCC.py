@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,13 @@ def _parse_sample(path_text: str):
 @st.cache_data(show_spinner=False)
 def _load_incc_series(path_text: str) -> pd.DataFrame:
     def _read_sheet(sheet_name: str) -> pd.DataFrame:
-        raw = pd.read_excel(path_text, sheet_name=sheet_name, header=1)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Workbook contains no default style, apply openpyxl's default",
+                category=UserWarning,
+            )
+            raw = pd.read_excel(path_text, sheet_name=sheet_name, header=1)
         if raw.empty or raw.shape[1] < 2:
             return pd.DataFrame(columns=["MesData", sheet_name])
 
