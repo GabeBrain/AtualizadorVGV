@@ -31,6 +31,29 @@ def _parse_sample(path_text: str):
     return parse_vgv_workbook(path_text)
 
 
+def _spinner_with_timer(message: str):
+    try:
+        return st.spinner(message, show_time=True)
+    except TypeError:
+        return st.spinner(message)
+
+
+def _source_token(
+    source_mode: str | None,
+    source_name: str | None,
+    source_bytes: bytes | None,
+    sample_path: Path,
+) -> str | None:
+    if source_mode == "upload" and source_bytes:
+        return f"upload:{source_name or '-'}:{len(source_bytes)}:{hash(source_bytes)}"
+
+    if source_mode == "sample" and sample_path.exists():
+        sample_stat = sample_path.stat()
+        return f"sample:{sample_path.name}:{sample_stat.st_size}:{int(sample_stat.st_mtime_ns)}"
+
+    return None
+
+
 def _find_column(columns: list[str], candidates: list[str]) -> str | None:
     normalized = {normalize_text(col): col for col in columns}
 
@@ -422,6 +445,7 @@ with st.expander("Fonte de dados", expanded=True):
             "source_mode",
             "source_name",
             "source_bytes",
+            "__loaded_source_token",
             "selected_empreendimento",
             "filter_empreendimentos",
             "filter_cidades",
@@ -439,12 +463,27 @@ source_mode = st.session_state.get("source_mode")
 base_df: pd.DataFrame | None = None
 perf_df: pd.DataFrame | None = None
 metadata: dict[str, Any] | None = None
+source_token = _source_token(
+    source_mode,
+    st.session_state.get("source_name"),
+    st.session_state.get("source_bytes"),
+    sample_path,
+)
+is_new_source = source_token is not None and st.session_state.get("__loaded_source_token") != source_token
 
 try:
     if source_mode == "upload" and st.session_state.get("source_bytes"):
-        base_df, perf_df, metadata = _parse_uploaded(st.session_state["source_bytes"])
+        if is_new_source:
+            with _spinner_with_timer("Carregando planilha enviada..."):
+                base_df, perf_df, metadata = _parse_uploaded(st.session_state["source_bytes"])
+        else:
+            base_df, perf_df, metadata = _parse_uploaded(st.session_state["source_bytes"])
     elif source_mode == "sample" and sample_path.exists():
-        base_df, perf_df, metadata = _parse_sample(str(sample_path))
+        if is_new_source:
+            with _spinner_with_timer("Carregando planilha de exemplo..."):
+                base_df, perf_df, metadata = _parse_sample(str(sample_path))
+        else:
+            base_df, perf_df, metadata = _parse_sample(str(sample_path))
 except Exception as exc:
     st.error(f"Falha ao ler planilha: {exc}")
     st.stop()
@@ -452,6 +491,9 @@ except Exception as exc:
 if base_df is None or perf_df is None or metadata is None:
     st.info("Carregue uma planilha para iniciar a analise.")
     st.stop()
+
+if source_token is not None:
+    st.session_state["__loaded_source_token"] = source_token
 
 if base_df.empty:
     st.warning("A planilha nao possui linhas de dados apos a limpeza inicial.")
@@ -493,12 +535,21 @@ reajuste_target_months: tuple[str, ...] | None = tuple(month_labels) if month_la
 
 if incc_series_path.exists():
     try:
-        reajuste_perf, reajuste_meta = _build_reajuste_dataset(
-            perf_df,
-            str(incc_series_path),
-            reajuste_target_months,
-            REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
-        )
+        if is_new_source:
+            with _spinner_with_timer("Calculando reajuste INCC..."):
+                reajuste_perf, reajuste_meta = _build_reajuste_dataset(
+                    perf_df,
+                    str(incc_series_path),
+                    reajuste_target_months,
+                    REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
+                )
+        else:
+            reajuste_perf, reajuste_meta = _build_reajuste_dataset(
+                perf_df,
+                str(incc_series_path),
+                reajuste_target_months,
+                REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
+            )
     except Exception as exc:
         reajuste_error = f"Falha ao preparar reajuste INCC: {exc}"
 else:
