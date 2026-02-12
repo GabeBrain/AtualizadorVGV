@@ -155,11 +155,11 @@ def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Tim
 
 with st.container(border=True):
     st.title("Reajuste de VGV a valor presente")
-    st.caption("Atualizacao do VGV Oferta Final para 12/2025 com INCC-DI.")
+    st.caption("Atualização do VGV Oferta Final para 12/2025 com INCC-DI.")
 
     nav_left, nav_right, _ = st.columns([1.2, 2.4, 3.4])
     with nav_left:
-        if st.button("Voltar para analise", width="stretch"):
+        if st.button("Voltar para análise", width="stretch"):
             st.switch_page("app.py")
 
     export_button_placeholder = nav_right.empty()
@@ -186,21 +186,21 @@ except Exception as exc:
     st.stop()
 
 if base_df is None or perf_df is None or metadata is None:
-    st.info("Abra primeiro a pagina principal e carregue uma planilha para habilitar o reajuste.")
+    st.info("Abra primeiro a página principal e carregue uma planilha para habilitar o reajuste.")
     st.stop()
 
 empreendimento_col = _find_column(list(perf_df.columns), ["Empreendimento"])
 vgv_oferta_col = _find_column(list(perf_df.columns), ["VGV Oferta Final"])
 
 if not empreendimento_col or not vgv_oferta_col:
-    st.error("Nao foi possivel encontrar as colunas de Empreendimento e VGV Oferta Final na planilha.")
+    st.error("Não foi possível encontrar as colunas de Empreendimento e VGV Oferta Final na planilha.")
     st.stop()
 
 if "MesData" not in perf_df.columns:
     if "Mes" in perf_df.columns:
         perf_df["MesData"] = pd.to_datetime("01/" + perf_df["Mes"].astype(str), format="%d/%m/%Y", errors="coerce")
     else:
-        st.error("Nao foi possivel identificar a data mensal para o reajuste.")
+        st.error("Não foi possível identificar a data mensal para o reajuste.")
         st.stop()
 
 if "Mes" not in perf_df.columns:
@@ -208,15 +208,15 @@ if "Mes" not in perf_df.columns:
 
 empreendimento_options = sorted(set(perf_df[empreendimento_col].dropna().astype(str).tolist()))
 if not empreendimento_options:
-    st.warning("Nao ha empreendimentos disponiveis para analise.")
+    st.warning("Não há empreendimentos disponíveis para análise.")
     st.stop()
 
 preferred_emp = st.session_state.get(REAJUSTE_EMP_KEY) or st.session_state.get("selected_empreendimento")
 default_index = empreendimento_options.index(preferred_emp) if preferred_emp in empreendimento_options else 0
 
 with st.container(border=True):
-    st.subheader("Parametros de analise")
-    st.caption("Os calculos usam os meses alvo 01/2021, 02/2021 e 03/2021.")
+    st.subheader("Parâmetros de análise")
+    st.caption("Os cálculos usam os meses-alvo 01/2021, 02/2021 e 03/2021.")
     selected_empreendimento = st.selectbox(
         "Empreendimento",
         options=empreendimento_options,
@@ -234,7 +234,7 @@ perf_emp = perf_emp.dropna(subset=["MesData", vgv_oferta_col])
 analysis_df = perf_emp[perf_emp["Mes"].isin(TARGET_MONTH_LABELS)].copy()
 if analysis_df.empty:
     st.warning(
-        "Nao ha dados para os meses 01/2021, 02/2021 e 03/2021 no empreendimento selecionado."
+        "Não há dados para os meses 01/2021, 02/2021 e 03/2021 no empreendimento selecionado."
     )
     monthly = pd.DataFrame(columns=["Mes", "MesData", "VGV Nominal"])
 else:
@@ -247,23 +247,23 @@ else:
 
 incc_path = Path(__file__).resolve().parents[1] / "assets" / "INCC_Series_MeDI.xlsx"
 if not incc_path.exists():
-    st.error("Arquivo INCC_Series_MeDI.xlsx nao encontrado em assets/.")
+    st.error("Arquivo INCC_Series_MeDI.xlsx não encontrado em assets/.")
     st.stop()
 
 try:
     incc_df = _load_incc_series(str(incc_path))
 except Exception as exc:
-    st.error(f"Falha ao ler arquivo de indices INCC: {exc}")
+    st.error(f"Falha ao ler arquivo de índices INCC: {exc}")
     st.stop()
 
 if incc_df.empty:
-    st.error("Arquivo de INCC sem dados validos.")
+    st.error("Arquivo de INCC sem dados válidos.")
     st.stop()
 
 base_di, base_di_date = _resolve_base_index(incc_df, "INCC-DI", PRESENT_BASE_DATE)
 
 if base_di is None:
-    st.error("Nao foi possivel encontrar valores de base do INCC para a data alvo.")
+    st.error("Não foi possível encontrar valores de base do INCC para a data-alvo.")
     st.stop()
 
 perf_all = perf_df.copy()
@@ -316,7 +316,7 @@ with st.container(border=True):
         st.warning("Meses sem dados no empreendimento: " + ", ".join(missing_months))
 
     if base_di_date is not None and base_di_date != PRESENT_BASE_DATE:
-        st.warning(f"Base INCC-DI usada: {base_di_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
+        st.warning(f"Base INCC-DI usada: {base_di_date.strftime('%m/%Y')} (12/2025 não encontrado)")
 
     m1, m2, m3 = st.columns(3)
     m1.metric("Empreendimento", selected_empreendimento)
@@ -326,15 +326,15 @@ with st.container(border=True):
     base_di_label = base_di_date.strftime("%m/%Y") if base_di_date is not None else "-"
     st.caption(f"Base alvo: 12/2025 | Base INCC-DI usada: {base_di_label}")
 
-    with st.expander("Logica aplicada no calculo", expanded=False):
+    with st.expander("Lógica aplicada no cálculo", expanded=False):
         st.markdown(
             "\n".join(
                 [
-                    "1. Parte do VGV Oferta Final mensal de cada linha e soma por mes.",
+                    "1. Parte do VGV Oferta Final mensal de cada linha e soma por mês.",
                     "2. Filtra os meses de 01/2021, 02/2021 e 03/2021.",
-                    "3. Corrige para valor presente em 12/2025 com formula:",
+                    "3. Corrige para valor presente em 12/2025 com fórmula:",
                     "   VGV_corrigido = VGV_nominal * (Indice_12/2025 / Indice_mes).",
-                    "4. Com a mesma base/serie, a forma por razao de indice e equivalente ao encadeamento de variacoes mensais.",
+                    "4. Com a mesma base/série, a forma por razão de índice é equivalente ao encadeamento de variações mensais.",
                 ]
             )
         )
@@ -370,15 +370,15 @@ for column in ["INCC-DI"]:
     display_df[column] = display_df[column].map(_format_decimal)
 
 with st.container(border=True):
-    st.subheader("Visualizacoes")
-    tab_series, tab_tabela, tab_export = st.tabs(["Serie historica", "Tabela de apoio", "Exportacao"])
+    st.subheader("Visualizações")
+    tab_series, tab_tabela, tab_export = st.tabs(["Série histórica", "Tabela de apoio", "Exportação"])
 
     with tab_series:
         chart = (
             alt.Chart(plot_df)
             .mark_line(point=True)
             .encode(
-                x=alt.X("MesData:T", title="Mes"),
+                x=alt.X("MesData:T", title="Mês"),
                 y=alt.Y("Valor:Q", title="VGV (R$)"),
                 color=alt.Color("Serie:N", title="Serie"),
                 tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
@@ -392,10 +392,10 @@ with st.container(border=True):
 
     with tab_export:
         st.caption(
-            "Exportador no topo: arquivo com todos os empreendimentos e 3 blocos mensais "
+            "Exportador no topo: arquivo com todos os empreendimentos e 2 blocos mensais "
             "(nominal e corrigido INCC-DI)."
         )
-        with st.expander("Preview do Excel de exportacao (todos os empreendimentos)", expanded=False):
+        with st.expander("Prévia do Excel de exportação (todos os empreendimentos)", expanded=False):
             preview_df = export_df.copy()
             for col in preview_df.columns:
                 if col == "Empreendimento":

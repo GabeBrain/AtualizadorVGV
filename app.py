@@ -397,12 +397,12 @@ def _build_reajuste_dataset(
 
 
 st.title(APP_NAME)
-st.caption("Mapa, series mensais, ficha do empreendimento e amenidades em uma unica pagina.")
+st.caption("Mapa, séries mensais, ficha do empreendimento e amenidades em uma única página.")
 
 sample_path = Path(__file__).resolve().parent / "assets" / "tabelaEmpreendimentoReduzida.xlsx"
 
 with st.expander("Fonte de dados", expanded=True):
-    uploaded_file = st.file_uploader("Planilha no formato padrao", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader("Planilha no formato padrão", type=["xlsx", "xls"])
     b1, b2, _ = st.columns([1, 1, 2])
     use_sample = b1.button(
         "Usar exemplo de assets",
@@ -470,14 +470,14 @@ except Exception as exc:
     st.stop()
 
 if base_df is None or perf_df is None or metadata is None:
-    st.info("Carregue uma planilha para iniciar a analise.")
+    st.info("Carregue uma planilha para iniciar a análise.")
     st.stop()
 
 if source_token is not None:
     st.session_state["__loaded_source_token"] = source_token
 
 if base_df.empty:
-    st.warning("A planilha nao possui linhas de dados apos a limpeza inicial.")
+    st.warning("A planilha não possui linhas de dados após a limpeza inicial.")
     st.stop()
 
 month_labels = metadata.get("month_labels", [])
@@ -496,7 +496,7 @@ longitude_col = _find_column(list(base_df.columns), ["Longitude"])
 tipologia_col = _find_column(list(base_df.columns), ["Tipologia"])
 
 if not empreendimento_col:
-    st.error("A coluna 'Empreendimento' e obrigatoria para a analise.")
+    st.error("A coluna 'Empreendimento' é obrigatória para a análise.")
     st.stop()
 
 status_metric_col = _find_column(list(perf_df.columns), ["Status"])
@@ -534,7 +534,7 @@ if incc_series_path.exists():
     except Exception as exc:
         reajuste_error = f"Falha ao preparar reajuste INCC: {exc}"
 else:
-    reajuste_error = "Arquivo de INCC (assets/INCC_Series_MeDI.xlsx) nao encontrado."
+    reajuste_error = "Arquivo de INCC (assets/INCC_Series_MeDI.xlsx) não encontrado."
 
 latest_record = pd.DataFrame(columns=["__registro_id"])
 if not perf_df.empty and "MesData" in perf_df.columns:
@@ -561,7 +561,7 @@ st.session_state.setdefault(PENDING_MAP_FILTER_KEY, None)
 
 
 st.subheader("Filtros")
-st.caption("Sem selecao em um filtro = todos os registros daquele campo.")
+st.caption("Sem seleção em um filtro = todos os registros daquele campo.")
 
 all_empreendimento_options = _clean_options(base_enriched[empreendimento_col])
 
@@ -671,7 +671,7 @@ else:
 map_base = map_base.dropna(subset=["__lat", "__lon"])
 
 if map_base.empty:
-    st.warning("Nao ha coordenadas validas para exibir o mapa com os filtros atuais.")
+    st.warning("Não há coordenadas válidas para exibir o mapa com os filtros atuais.")
 else:
     latest_by_empreendimento = pd.DataFrame(columns=[empreendimento_col])
     if not filtered_perf.empty and "MesData" in filtered_perf.columns:
@@ -819,7 +819,7 @@ else:
         st.caption(f"Empreendimento em foco no mapa: {st.session_state['selected_empreendimento']}")
 
 # Graficos temporais (sempre usando todos os meses disponiveis no arquivo)
-st.subheader("Series mensais de VGV (agregado pelos filtros)")
+st.subheader("Séries mensais de VGV (agregado pelos filtros)")
 
 if filtered_perf.empty:
     st.info("Sem dados mensais para os filtros atuais.")
@@ -847,7 +847,7 @@ else:
     if not monthly.empty:
         k1, k2, k3, k4 = st.columns(4)
         last_row = monthly.iloc[-1]
-        k1.metric("Mes de referencia", str(last_row.get("Mes", "-")))
+        k1.metric("Mês de referência", str(last_row.get("Mes", "-")))
         if vgv_total_col and vgv_total_col in monthly.columns:
             k2.metric("VGV Total", _format_brl_compact(last_row.get(vgv_total_col)))
         if vgv_oferta_col and vgv_oferta_col in monthly.columns:
@@ -904,8 +904,8 @@ else:
 
 st.subheader("Reajuste INCC-DI (agregado pelos filtros)")
 st.caption(
-    "Cada ponto usa o VGV Oferta Final do proprio mes. "
-    "O reajuste aplica fator ate a base fixa de dezembro/2025 usando INCC-DI."
+    "Cada ponto usa o VGV Oferta Final do próprio mês. "
+    "O reajuste aplica fator até a base fixa de dezembro/2025 usando INCC-DI."
 )
 
 if reajuste_error:
@@ -938,33 +938,33 @@ else:
 
     r1, r2, r3 = st.columns(3)
     r1.metric("Empreendimento", target_label)
-    r2.metric("Nominal (mes ref)", _format_brl_compact(reference_row.get("VGV Nominal")))
-    r3.metric("Corrigido DI (mes ref)", _format_brl_compact(current_ref_di))
+    r2.metric("Nominal (mês ref)", _format_brl_compact(reference_row.get("VGV Nominal")))
+    r3.metric("Corrigido DI (mês ref)", _format_brl_compact(current_ref_di))
 
     base_di_date = reajuste_meta.get("base_di_date")
     base_di_label = base_di_date.strftime("%m/%Y") if isinstance(base_di_date, pd.Timestamp) else "-"
     st.caption(
-        f"Serie exibida: {start_month_label} ate {reference_month_label} | "
+        f"Série exibida: {start_month_label} até {reference_month_label} | "
         f"Base INCC-DI usada: {base_di_label}"
     )
 
-    with st.expander("Resumo metodologico do reajuste", expanded=False):
+    with st.expander("Resumo metodológico do reajuste", expanded=False):
         st.markdown(
             "\n".join(
                 [
-                    "**Metricas exibidas**",
+                    "**Métricas exibidas**",
                     "- Empreendimento: 1 nome selecionado ou N (filtros).",
-                    "- Nominal (mes ref): soma do VGV Oferta Final no ultimo mes da serie exibida.",
-                    "- Corrigido DI (mes ref): nominal do mes de referencia atualizado para a base 12/2025.",
+                    "- Nominal (mês ref): soma do VGV Oferta Final no último mês da série exibida.",
+                    "- Corrigido DI (mês ref): nominal do mês de referência atualizado para a base 12/2025.",
                     "",
-                    "**Indice adotado**",
-                    "- O app usa INCC-DI como padrao unico para reajuste.",
-                    "- Motivo: alinhamento mensal com a serie da planilha e padronizacao da leitura executiva.",
+                    "**Índice adotado**",
+                    "- O app usa INCC-DI como padrão único para reajuste.",
+                    "- Motivo: alinhamento mensal com a série da planilha e padronização da leitura executiva.",
                     "",
-                    "**Calculo aplicado**",
-                    "- Metodo por indice direto: VGV_corrigido = VGV_nominal * (Indice_base / Indice_mes).",
-                    "- Forma equivalente por variacao mes a mes: encadeamento dos fatores mensais ate a base.",
-                    "- Com a mesma serie/base de INCC-DI, os dois metodos sao matematicamente equivalentes.",
+                    "**Cálculo aplicado**",
+                    "- Método por índice direto: VGV_corrigido = VGV_nominal * (Indice_base / Indice_mes).",
+                    "- Forma equivalente por variação mês a mês: encadeamento dos fatores mensais até a base.",
+                    "- Com a mesma série/base de INCC-DI, os dois métodos são matematicamente equivalentes.",
                 ]
             )
         )
@@ -988,7 +988,7 @@ else:
         alt.Chart(reajuste_plot)
         .mark_line(point=True)
         .encode(
-            x=alt.X("MesData:T", title="Mes"),
+            x=alt.X("MesData:T", title="Mês"),
             y=alt.Y("Valor:Q", title="VGV (R$)"),
             color=alt.Color("Serie:N", title="Serie"),
             tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
@@ -1000,7 +1000,7 @@ else:
 # Ficha + amenidades apenas quando houver 1 empreendimento no filtro
 if len(filtered_empreendimentos) != 1:
     st.info(
-        "Ficha do empreendimento e amenidades ficam disponiveis quando o filtro retorna um unico empreendimento. "
+        "Ficha do empreendimento e amenidades ficam disponíveis quando o filtro retorna um único empreendimento. "
         "Dica: clique em um ponto no mapa para aplicar esse filtro automaticamente."
     )
 else:
@@ -1009,7 +1009,7 @@ else:
 
     selected_rows = filtered_base[filtered_base[empreendimento_col].astype(str) == selected_empreendimento].copy()
     if selected_rows.empty:
-        st.info("Nao foi possivel montar detalhes para o empreendimento selecionado.")
+        st.info("Não foi possível montar detalhes para o empreendimento selecionado.")
     else:
         row_for_details = selected_rows.sort_values(by=tipologia_col).iloc[0] if tipologia_col else selected_rows.iloc[0]
         all_columns = list(base_df.columns)
@@ -1017,8 +1017,8 @@ else:
         with st.expander("Ficha do empreendimento", expanded=False):
             ficha_fields = [
                 "Empreendimento",
-                "Endereco",
-                "Numero",
+                "Endereço",
+                "Número",
                 "Bairro",
                 "CEP",
                 "Cidade",
@@ -1028,7 +1028,7 @@ else:
                 "Incorporadora 1",
                 "Incorporadora 2",
                 "Incorporadora 3",
-                "Data de Lancamento",
+                "Data de Lançamento",
                 "Data de Entrega",
                 "Tipo",
                 "Quartos",
@@ -1037,9 +1037,9 @@ else:
                 "Elevadores",
                 "Unidades por Tipologia",
                 "M2 Privativo",
-                "Padrao",
+                "Padrão",
                 "Tipologia",
-                "Oferta Lancada",
+                "Oferta Lançada",
             ]
 
             ficha_data: list[dict[str, Any]] = []
@@ -1066,11 +1066,11 @@ else:
                     ficha_df["Valor"] = ficha_df["Valor"].map(_display_value_text)
                 st.dataframe(ficha_df, width="stretch", hide_index=True)
             else:
-                st.info("Nao foi possivel montar a ficha com as colunas esperadas.")
+                st.info("Não foi possível montar a ficha com as colunas esperadas.")
 
         with st.expander("Amenidades presentes (Sim)", expanded=False):
             if not amenity_columns:
-                st.info("Nao foi possivel detectar colunas de amenidades automaticamente.")
+                st.info("Não foi possível detectar colunas de amenidades automaticamente.")
             else:
                 merged_groups = {"Interna": set(), "Externa": set(), "Comercial": set(), "Geral": set()}
                 for _, row in selected_rows.iterrows():
@@ -1139,4 +1139,15 @@ export_col2.download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     width="stretch",
 )
+
+with st.expander("Teste de acentuação (UTF-8)", expanded=False):
+    st.markdown(
+        "\n".join(
+            [
+                "- Ação, atenção, análise, atualização, página e referência.",
+                "- Índice, método, cálculo, variação mês a mês e série histórica.",
+                "- Não há inconsistência de codificação: São Paulo, útil, próximo, órgão.",
+            ]
+        )
+    )
 
