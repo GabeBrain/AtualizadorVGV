@@ -96,6 +96,50 @@ def _format_brl(value: Any) -> str:
     return "R$ " + _format_decimal(value)
 
 
+def _format_decimal_variable(value: Any, precision: int = 1) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "-"
+    try:
+        raw = f"{float(value):,.{precision}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (TypeError, ValueError):
+        return str(value)
+
+    if "," in raw:
+        left, right = raw.split(",", 1)
+        right = right.rstrip("0")
+        return f"{left},{right}" if right else left
+    return raw
+
+
+def _format_brl_compact(value: Any, precision: int = 1) -> str:
+    if value is None:
+        return "-"
+    try:
+        if pd.isna(value):
+            return "-"
+    except Exception:
+        pass
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    abs_numeric = abs(numeric)
+    if abs_numeric >= 1_000_000_000:
+        scaled = numeric / 1_000_000_000
+        suffix = "bilhao" if abs(scaled) < 2 else "bilhoes"
+        return f"R$ {_format_decimal_variable(scaled, precision)} {suffix}"
+    if abs_numeric >= 1_000_000:
+        scaled = numeric / 1_000_000
+        suffix = "milhao" if abs(scaled) < 2 else "milhoes"
+        return f"R$ {_format_decimal_variable(scaled, precision)} {suffix}"
+    if abs_numeric >= 1_000:
+        scaled = numeric / 1_000
+        return f"R$ {_format_decimal_variable(scaled, precision)} mil"
+    return _format_brl(numeric)
+
+
 def _display_value_text(value: Any) -> str:
     if value is None:
         return "-"
@@ -868,9 +912,9 @@ else:
         last_row = monthly.iloc[-1]
         k1.metric("Mes de referencia", str(last_row.get("Mes", "-")))
         if vgv_total_col and vgv_total_col in monthly.columns:
-            k2.metric("VGV Total", _format_brl(last_row.get(vgv_total_col)))
+            k2.metric("VGV Total", _format_brl_compact(last_row.get(vgv_total_col)))
         if vgv_oferta_col and vgv_oferta_col in monthly.columns:
-            k3.metric("VGV Oferta Final", _format_brl(last_row.get(vgv_oferta_col)))
+            k3.metric("VGV Oferta Final", _format_brl_compact(last_row.get(vgv_oferta_col)))
         if estoque_col and estoque_col in monthly.columns:
             k4.metric("Estoque", _format_number(last_row.get(estoque_col)))
 
@@ -959,9 +1003,9 @@ else:
 
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("Empreendimento", target_label)
-    r2.metric("Nominal (mes ref)", _format_brl(reference_row.get("VGV Nominal")))
-    r3.metric("Corrigido DI (mes ref)", _format_brl(current_ref_di))
-    r4.metric("Corrigido M (mes ref)", _format_brl(current_ref_m))
+    r2.metric("Nominal (mes ref)", _format_brl_compact(reference_row.get("VGV Nominal")))
+    r3.metric("Corrigido DI (mes ref)", _format_brl_compact(current_ref_di))
+    r4.metric("Corrigido M (mes ref)", _format_brl_compact(current_ref_m))
 
     base_di_date = reajuste_meta.get("base_di_date")
     base_m_date = reajuste_meta.get("base_m_date")
