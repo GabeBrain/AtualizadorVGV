@@ -55,11 +55,8 @@ def _load_incc_series(path_text: str) -> pd.DataFrame:
         return frame.reset_index(drop=True)
 
     di = _read_sheet("INCC-DI")
-    m = _read_sheet("INCC-M")
-
-    merged = pd.merge(di, m, on="MesData", how="outer")
-    merged = merged.sort_values("MesData").drop_duplicates(subset=["MesData"], keep="last")
-    return merged.reset_index(drop=True)
+    di = di.sort_values("MesData").drop_duplicates(subset=["MesData"], keep="last")
+    return di.reset_index(drop=True)
 
 
 def _find_column(columns: list[str], candidates: list[str]) -> str | None:
@@ -109,11 +106,6 @@ def _build_export_row(empreendimento: str, monthly_df: pd.DataFrame) -> dict[str
             monthly_indexed.at[month, "VGV Corrigido INCC-DI"] if month in monthly_indexed.index else pd.NA
         )
 
-    for month in TARGET_MONTH_LABELS:
-        row[f"VGV Oferta Final Corrigido INCC-M {month}"] = (
-            monthly_indexed.at[month, "VGV Corrigido INCC-M"] if month in monthly_indexed.index else pd.NA
-        )
-
     return row
 
 
@@ -122,7 +114,7 @@ def _build_export_dataframe_all(monthly_all_df: pd.DataFrame, empreendimentos: l
 
     for empreendimento in empreendimentos:
         if monthly_all_df.empty:
-            emp_monthly = pd.DataFrame(columns=["Mes", "VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"])
+            emp_monthly = pd.DataFrame(columns=["Mes", "VGV Nominal", "VGV Corrigido INCC-DI"])
         else:
             emp_monthly = monthly_all_df[monthly_all_df["Empreendimento"] == empreendimento].copy()
         rows.append(_build_export_row(empreendimento, emp_monthly))
@@ -163,7 +155,7 @@ def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Tim
 
 with st.container(border=True):
     st.title("Reajuste de VGV a valor presente")
-    st.caption("Atualizacao do VGV Oferta Final para 12/2025 com INCC-DI e INCC-M.")
+    st.caption("Atualizacao do VGV Oferta Final para 12/2025 com INCC-DI.")
 
     nav_left, nav_right, _ = st.columns([1.2, 2.4, 3.4])
     with nav_left:
@@ -225,23 +217,13 @@ default_index = empreendimento_options.index(preferred_emp) if preferred_emp in 
 with st.container(border=True):
     st.subheader("Parametros de analise")
     st.caption("Os calculos usam os meses alvo 01/2021, 02/2021 e 03/2021.")
-
-    control_left, control_right = st.columns([2, 3])
-    with control_left:
-        selected_empreendimento = st.selectbox(
-            "Empreendimento",
-            options=empreendimento_options,
-            index=default_index,
-        )
-        st.session_state[REAJUSTE_EMP_KEY] = selected_empreendimento
-        st.session_state["selected_empreendimento"] = selected_empreendimento
-
-    with control_right:
-        series_mode = st.radio(
-            "Serie para comparacao no grafico",
-            options=["Comparar ambos", "INCC-DI", "INCC-M"],
-            horizontal=True,
-        )
+    selected_empreendimento = st.selectbox(
+        "Empreendimento",
+        options=empreendimento_options,
+        index=default_index,
+    )
+    st.session_state[REAJUSTE_EMP_KEY] = selected_empreendimento
+    st.session_state["selected_empreendimento"] = selected_empreendimento
 
 perf_emp = perf_df.copy()
 perf_emp[empreendimento_col] = perf_emp[empreendimento_col].astype(str)
@@ -279,9 +261,8 @@ if incc_df.empty:
     st.stop()
 
 base_di, base_di_date = _resolve_base_index(incc_df, "INCC-DI", PRESENT_BASE_DATE)
-base_m, base_m_date = _resolve_base_index(incc_df, "INCC-M", PRESENT_BASE_DATE)
 
-if base_di is None and base_m is None:
+if base_di is None:
     st.error("Nao foi possivel encontrar valores de base do INCC para a data alvo.")
     st.stop()
 
@@ -307,13 +288,6 @@ if base_di is not None and "INCC-DI" in monthly_all.columns:
 else:
     monthly_all["VGV Corrigido INCC-DI"] = pd.NA
 
-if base_m is not None and "INCC-M" in monthly_all.columns:
-    monthly_all["VGV Corrigido INCC-M"] = (
-        monthly_all["VGV Nominal"] * base_m / monthly_all["INCC-M"].replace(0, pd.NA)
-    )
-else:
-    monthly_all["VGV Corrigido INCC-M"] = pd.NA
-
 export_df = _build_export_dataframe_all(monthly_all, empreendimento_options)
 export_bytes = _export_excel_bytes(export_df)
 
@@ -333,11 +307,6 @@ if base_di is not None and "INCC-DI" in monthly.columns:
 else:
     monthly["VGV Corrigido INCC-DI"] = pd.NA
 
-if base_m is not None and "INCC-M" in monthly.columns:
-    monthly["VGV Corrigido INCC-M"] = monthly["VGV Nominal"] * base_m / monthly["INCC-M"].replace(0, pd.NA)
-else:
-    monthly["VGV Corrigido INCC-M"] = pd.NA
-
 missing_months = [month for month in TARGET_MONTH_LABELS if month not in set(monthly["Mes"].tolist())]
 
 with st.container(border=True):
@@ -348,20 +317,14 @@ with st.container(border=True):
 
     if base_di_date is not None and base_di_date != PRESENT_BASE_DATE:
         st.warning(f"Base INCC-DI usada: {base_di_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
-    if base_m_date is not None and base_m_date != PRESENT_BASE_DATE:
-        st.warning(f"Base INCC-M usada: {base_m_date.strftime('%m/%Y')} (12/2025 nao encontrado)")
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
     m1.metric("Empreendimento", selected_empreendimento)
     m2.metric("Soma nominal", _format_brl(monthly["VGV Nominal"].sum()))
     m3.metric("Soma corrigida INCC-DI", _format_brl(monthly["VGV Corrigido INCC-DI"].sum(min_count=1)))
-    m4.metric("Soma corrigida INCC-M", _format_brl(monthly["VGV Corrigido INCC-M"].sum(min_count=1)))
 
     base_di_label = base_di_date.strftime("%m/%Y") if base_di_date is not None else "-"
-    base_m_label = base_m_date.strftime("%m/%Y") if base_m_date is not None else "-"
-    st.caption(
-        f"Base alvo: 12/2025 | Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
-    )
+    st.caption(f"Base alvo: 12/2025 | Base INCC-DI usada: {base_di_label}")
 
     with st.expander("Logica aplicada no calculo", expanded=False):
         st.markdown(
@@ -371,21 +334,16 @@ with st.container(border=True):
                     "2. Filtra os meses de 01/2021, 02/2021 e 03/2021.",
                     "3. Corrige para valor presente em 12/2025 com formula:",
                     "   VGV_corrigido = VGV_nominal * (Indice_12/2025 / Indice_mes).",
-                    "4. Permite comparar nominal vs corrigido por INCC-DI e/ou INCC-M.",
+                    "4. Com a mesma base/serie, a forma por razao de indice e equivalente ao encadeamento de variacoes mensais.",
                 ]
             )
         )
 
-plot_columns = ["VGV Nominal"]
-label_map = {"VGV Nominal": "VGV Oferta Final (nominal)"}
-
-if series_mode in {"Comparar ambos", "INCC-DI"}:
-    plot_columns.append("VGV Corrigido INCC-DI")
-    label_map["VGV Corrigido INCC-DI"] = "VGV corrigido (INCC-DI)"
-
-if series_mode in {"Comparar ambos", "INCC-M"}:
-    plot_columns.append("VGV Corrigido INCC-M")
-    label_map["VGV Corrigido INCC-M"] = "VGV corrigido (INCC-M)"
+plot_columns = ["VGV Nominal", "VGV Corrigido INCC-DI"]
+label_map = {
+    "VGV Nominal": "VGV Oferta Final (nominal)",
+    "VGV Corrigido INCC-DI": "VGV corrigido (INCC-DI)",
+}
 
 plot_df = monthly[["Mes", "MesData", *plot_columns]].melt(
     id_vars=["Mes", "MesData"],
@@ -402,15 +360,13 @@ display_df = monthly[
         "VGV Nominal",
         "INCC-DI",
         "VGV Corrigido INCC-DI",
-        "INCC-M",
-        "VGV Corrigido INCC-M",
     ]
 ].copy()
 
-for column in ["VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"]:
+for column in ["VGV Nominal", "VGV Corrigido INCC-DI"]:
     display_df[column] = display_df[column].map(_format_brl)
 
-for column in ["INCC-DI", "INCC-M"]:
+for column in ["INCC-DI"]:
     display_df[column] = display_df[column].map(_format_decimal)
 
 with st.container(border=True):
@@ -437,7 +393,7 @@ with st.container(border=True):
     with tab_export:
         st.caption(
             "Exportador no topo: arquivo com todos os empreendimentos e 3 blocos mensais "
-            "(nominal, corrigido INCC-DI e corrigido INCC-M)."
+            "(nominal e corrigido INCC-DI)."
         )
         with st.expander("Preview do Excel de exportacao (todos os empreendimentos)", expanded=False):
             preview_df = export_df.copy()

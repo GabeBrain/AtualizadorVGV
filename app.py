@@ -291,11 +291,8 @@ def _load_incc_series(path_text: str) -> pd.DataFrame:
         return frame.reset_index(drop=True)
 
     di = _read_sheet("INCC-DI")
-    m = _read_sheet("INCC-M")
-
-    merged = pd.merge(di, m, on="MesData", how="outer")
-    merged = merged.sort_values("MesData").drop_duplicates(subset=["MesData"], keep="last")
-    return merged.reset_index(drop=True)
+    di = di.sort_values("MesData").drop_duplicates(subset=["MesData"], keep="last")
+    return di.reset_index(drop=True)
 
 
 def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Timestamp) -> tuple[float | None, pd.Timestamp | None]:
@@ -322,55 +319,6 @@ def _resolve_base_index(index_df: pd.DataFrame, column: str, target_date: pd.Tim
     return float(row[column]), pd.Timestamp(row["MesData"])
 
 
-def _compound_factor_from_index(
-    index_df: pd.DataFrame,
-    column: str,
-    start_date: Any,
-    end_date: Any,
-) -> float | None:
-    if column not in index_df.columns or "MesData" not in index_df.columns:
-        return None
-
-    start_ts = pd.to_datetime(start_date, errors="coerce")
-    end_ts = pd.to_datetime(end_date, errors="coerce")
-    if pd.isna(start_ts) or pd.isna(end_ts):
-        return None
-
-    start_ts = start_ts.to_period("M").to_timestamp()
-    end_ts = end_ts.to_period("M").to_timestamp()
-    if start_ts > end_ts:
-        return None
-    if start_ts == end_ts:
-        return 1.0
-
-    frame = index_df[["MesData", column]].copy()
-    frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    frame = (
-        frame.dropna(subset=["MesData", column])
-        .sort_values("MesData")
-        .drop_duplicates(subset=["MesData"], keep="last")
-    )
-    if frame.empty:
-        return None
-
-    month_set = set(frame["MesData"].tolist())
-    if start_ts not in month_set:
-        return None
-
-    if end_ts not in month_set:
-        previous_end = frame[frame["MesData"] <= end_ts]
-        if previous_end.empty:
-            return None
-        end_ts = pd.Timestamp(previous_end.iloc[-1]["MesData"])
-
-    frame["factor_step"] = frame[column] / frame[column].shift(1)
-    steps = frame[(frame["MesData"] > start_ts) & (frame["MesData"] <= end_ts)]["factor_step"].dropna()
-    if steps.empty:
-        return None
-
-    return float(steps.prod())
-
-
 @st.cache_data(show_spinner=False)
 def _build_reajuste_dataset(
     perf_source: pd.DataFrame,
@@ -385,9 +333,7 @@ def _build_reajuste_dataset(
         "MesData",
         "VGV Nominal",
         "INCC-DI",
-        "INCC-M",
         "VGV Corrigido INCC-DI",
-        "VGV Corrigido INCC-M",
     ]
     empty_frame = pd.DataFrame(columns=empty_columns)
 
@@ -400,13 +346,9 @@ def _build_reajuste_dataset(
         base_date = REAJUSTE_BASE_DATE
 
     base_di, base_di_date = _resolve_base_index(incc_df, "INCC-DI", base_date)
-    base_m, base_m_date = _resolve_base_index(incc_df, "INCC-M", base_date)
-
     meta: dict[str, Any] = {
         "base_di": base_di,
-        "base_m": base_m,
         "base_di_date": base_di_date,
-        "base_m_date": base_m_date,
         "reference_date": pd.Timestamp(base_date),
         "target_months": list(target_months) if target_months else [],
     }
@@ -449,11 +391,6 @@ def _build_reajuste_dataset(
         monthly["VGV Corrigido INCC-DI"] = monthly["VGV Nominal"] * base_di / monthly["INCC-DI"].replace(0, pd.NA)
     else:
         monthly["VGV Corrigido INCC-DI"] = pd.NA
-
-    if base_m is not None and "INCC-M" in monthly.columns:
-        monthly["VGV Corrigido INCC-M"] = monthly["VGV Nominal"] * base_m / monthly["INCC-M"].replace(0, pd.NA)
-    else:
-        monthly["VGV Corrigido INCC-M"] = pd.NA
 
     monthly = monthly.sort_values(["Empreendimento", "MesData"]).reset_index(drop=True)
     return monthly, meta
@@ -965,10 +902,10 @@ else:
             )
             st.altair_chart((bar + line).properties(height=320), width="stretch")
 
-st.subheader("Reajuste INCC (agregado pelos filtros)")
+st.subheader("Reajuste INCC-DI (agregado pelos filtros)")
 st.caption(
     "Cada ponto usa o VGV Oferta Final do proprio mes. "
-    "O reajuste aplica fator ate a base fixa de dezembro/2025."
+    "O reajuste aplica fator ate a base fixa de dezembro/2025 usando INCC-DI."
 )
 
 if reajuste_error:
@@ -982,7 +919,6 @@ else:
             {
                 "VGV Nominal": "sum",
                 "VGV Corrigido INCC-DI": "sum",
-                "VGV Corrigido INCC-M": "sum",
             }
         )
         .sort_values("MesData")
@@ -999,110 +935,52 @@ else:
     )
 
     current_ref_di = reference_row.get("VGV Corrigido INCC-DI")
-    current_ref_m = reference_row.get("VGV Corrigido INCC-M")
 
-    r1, r2, r3, r4 = st.columns(4)
+    r1, r2, r3 = st.columns(3)
     r1.metric("Empreendimento", target_label)
     r2.metric("Nominal (mes ref)", _format_brl_compact(reference_row.get("VGV Nominal")))
     r3.metric("Corrigido DI (mes ref)", _format_brl_compact(current_ref_di))
-    r4.metric("Corrigido M (mes ref)", _format_brl_compact(current_ref_m))
 
     base_di_date = reajuste_meta.get("base_di_date")
-    base_m_date = reajuste_meta.get("base_m_date")
     base_di_label = base_di_date.strftime("%m/%Y") if isinstance(base_di_date, pd.Timestamp) else "-"
-    base_m_label = base_m_date.strftime("%m/%Y") if isinstance(base_m_date, pd.Timestamp) else "-"
     st.caption(
         f"Serie exibida: {start_month_label} ate {reference_month_label} | "
-        f"Base INCC-DI usada: {base_di_label} | Base INCC-M usada: {base_m_label}"
+        f"Base INCC-DI usada: {base_di_label}"
     )
-
-    audit_frame = reajuste_monthly[["Mes", "MesData", "VGV Nominal"]].copy()
-    audit_frame["VGV Corrigido INCC-DI (composto)"] = pd.NA
-    audit_frame["VGV Corrigido INCC-M (composto)"] = pd.NA
-
-    audit_warning: str | None = None
-    try:
-        incc_audit = _load_incc_series(str(incc_series_path))
-        if not incc_audit.empty:
-            di_end = base_di_date if isinstance(base_di_date, pd.Timestamp) else REAJUSTE_BASE_DATE
-            m_end = base_m_date if isinstance(base_m_date, pd.Timestamp) else REAJUSTE_BASE_DATE
-
-            for idx, row in audit_frame.iterrows():
-                factor_di = _compound_factor_from_index(incc_audit, "INCC-DI", row["MesData"], di_end)
-                factor_m = _compound_factor_from_index(incc_audit, "INCC-M", row["MesData"], m_end)
-
-                if factor_di is not None:
-                    audit_frame.at[idx, "VGV Corrigido INCC-DI (composto)"] = row["VGV Nominal"] * factor_di
-                if factor_m is not None:
-                    audit_frame.at[idx, "VGV Corrigido INCC-M (composto)"] = row["VGV Nominal"] * factor_m
-        else:
-            audit_warning = "Sem dados de INCC para validar o metodo composto."
-    except Exception as exc:
-        audit_warning = f"Nao foi possivel calcular auditoria composta: {exc}"
-
-    audit_ref = audit_frame[audit_frame["MesData"] == reference_row["MesData"]]
-    if audit_ref.empty:
-        comp_ref_di = pd.NA
-        comp_ref_m = pd.NA
-    else:
-        comp_ref_di = audit_ref.iloc[-1].get("VGV Corrigido INCC-DI (composto)")
-        comp_ref_m = audit_ref.iloc[-1].get("VGV Corrigido INCC-M (composto)")
 
     with st.expander("Resumo metodologico do reajuste", expanded=False):
         st.markdown(
             "\n".join(
                 [
-                    "**Definicao das metricas exibidas**",
+                    "**Metricas exibidas**",
                     "- Empreendimento: 1 nome selecionado ou N (filtros).",
-                    "- Nominal (mes ref): VGV Oferta Final agregado no ultimo mes da serie exibida.",
-                    "- Corrigido DI/M (mes ref): valor do mes de referencia corrigido pelo respectivo indice.",
+                    "- Nominal (mes ref): soma do VGV Oferta Final no ultimo mes da serie exibida.",
+                    "- Corrigido DI (mes ref): nominal do mes de referencia atualizado para a base 12/2025.",
                     "",
-                    "**Comparacao metodologica**",
-                    "- Metodo atual: razao direta (Indice_base / Indice_mes).",
-                    "- Metodo composto (auditoria): encadeia fatores mensais ate a base.",
-                    "- Em series consistentes, os dois metodos tendem a convergir (diferencas pequenas por arredondamento e faltas de base).",
+                    "**Indice adotado**",
+                    "- O app usa INCC-DI como padrao unico para reajuste.",
+                    "- Motivo: alinhamento mensal com a serie da planilha e padronizacao da leitura executiva.",
+                    "",
+                    "**Calculo aplicado**",
+                    "- Metodo por indice direto: VGV_corrigido = VGV_nominal * (Indice_base / Indice_mes).",
+                    "- Forma equivalente por variacao mes a mes: encadeamento dos fatores mensais ate a base.",
+                    "- Com a mesma serie/base de INCC-DI, os dois metodos sao matematicamente equivalentes.",
                 ]
             )
-        )
-        if audit_warning:
-            st.info(audit_warning)
-
-        d1, d2 = st.columns(2)
-        d1.metric(
-            "DI: diferenca no mes ref (composto - atual)",
-            _format_brl((comp_ref_di - current_ref_di) if pd.notna(comp_ref_di) and pd.notna(current_ref_di) else pd.NA),
-        )
-        d2.metric(
-            "M: diferenca no mes ref (composto - atual)",
-            _format_brl((comp_ref_m - current_ref_m) if pd.notna(comp_ref_m) and pd.notna(current_ref_m) else pd.NA),
         )
 
     reajuste_plot = reajuste_monthly.melt(
         id_vars=["Mes", "MesData"],
-        value_vars=["VGV Nominal", "VGV Corrigido INCC-DI", "VGV Corrigido INCC-M"],
+        value_vars=["VGV Nominal", "VGV Corrigido INCC-DI"],
         var_name="Serie",
         value_name="Valor",
     )
-    if audit_frame["VGV Corrigido INCC-DI (composto)"].notna().any():
-        extra_di = audit_frame[["Mes", "MesData", "VGV Corrigido INCC-DI (composto)"]].rename(
-            columns={"VGV Corrigido INCC-DI (composto)": "Valor"}
-        )
-        extra_di["Serie"] = "VGV corrigido (INCC-DI composto)"
-        reajuste_plot = pd.concat([reajuste_plot, extra_di], ignore_index=True)
-    if audit_frame["VGV Corrigido INCC-M (composto)"].notna().any():
-        extra_m = audit_frame[["Mes", "MesData", "VGV Corrigido INCC-M (composto)"]].rename(
-            columns={"VGV Corrigido INCC-M (composto)": "Valor"}
-        )
-        extra_m["Serie"] = "VGV corrigido (INCC-M composto)"
-        reajuste_plot = pd.concat([reajuste_plot, extra_m], ignore_index=True)
-
     reajuste_plot["Valor"] = pd.to_numeric(reajuste_plot["Valor"], errors="coerce")
     reajuste_plot = reajuste_plot.dropna(subset=["Valor"])
     reajuste_plot["Serie"] = reajuste_plot["Serie"].astype(str).replace(
         {
             "VGV Nominal": "VGV Oferta Final (nominal)",
             "VGV Corrigido INCC-DI": "VGV corrigido (INCC-DI)",
-            "VGV Corrigido INCC-M": "VGV corrigido (INCC-M)",
         }
     )
 
