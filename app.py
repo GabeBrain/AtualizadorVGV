@@ -128,11 +128,11 @@ def _format_brl_compact(value: Any, precision: int = 1) -> str:
     abs_numeric = abs(numeric)
     if abs_numeric >= 1_000_000_000:
         scaled = numeric / 1_000_000_000
-        suffix = "bilhao" if abs(scaled) < 2 else "bilhoes"
+        suffix = "bilhão" if abs(scaled) < 2 else "bilhões"
         return f"R$ {_format_decimal_variable(scaled, precision)} {suffix}"
     if abs_numeric >= 1_000_000:
         scaled = numeric / 1_000_000
-        suffix = "milhao" if abs(scaled) < 2 else "milhoes"
+        suffix = "milhão" if abs(scaled) < 2 else "milhões"
         return f"R$ {_format_decimal_variable(scaled, precision)} {suffix}"
     if abs_numeric >= 1_000:
         scaled = numeric / 1_000
@@ -1139,15 +1139,4 @@ export_col2.download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     width="stretch",
 )
-
-with st.expander("Teste de acentuação (UTF-8)", expanded=False):
-    st.markdown(
-        "\n".join(
-            [
-                "- Ação, atenção, análise, atualização, página e referência.",
-                "- Índice, método, cálculo, variação mês a mês e série histórica.",
-                "- Não há inconsistência de codificação: São Paulo, útil, próximo, órgão.",
-            ]
-        )
-    )
 
