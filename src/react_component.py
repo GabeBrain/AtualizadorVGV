@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 _COMPONENT_DIR = Path(__file__).resolve().parents[1] / "frontend" / "react_workspace"
 
 _react_workspace_component = components.declare_component(
-    "react_workspace_poc",
+    "react_workspace_poc_local",
     path=str(_COMPONENT_DIR),
 )
 

@@ -3,10 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>React Workspace</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/streamlit-component-lib@latest/dist/index.js"></script>
+  <title>React Workspace POC</title>
   <style>
     :root {
       --bg: #f8f7f2;
@@ -23,8 +20,8 @@
       margin: 0;
       padding: 0;
       background: transparent;
-      font-family: "Segoe UI", Arial, sans-serif;
       color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
     }
 
     .workspace {
@@ -147,124 +144,146 @@
 <body>
   <div id="root"></div>
   <script>
-    const { useMemo, useState, useEffect } = React;
-    const root = ReactDOM.createRoot(document.getElementById("root"));
+    const root = document.getElementById("root");
+
+    const Bridge = {
+      MESSAGE_RENDER: "streamlit:render",
+      MESSAGE_COMPONENT_READY: "streamlit:componentReady",
+      MESSAGE_SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+      MESSAGE_SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+
+      send(type, payload) {
+        window.parent.postMessage(
+          {
+            isStreamlitMessage: true,
+            type,
+            ...payload,
+          },
+          "*"
+        );
+      },
+
+      setComponentReady() {
+        this.send(this.MESSAGE_COMPONENT_READY, { apiVersion: 1 });
+      },
+
+      setFrameHeight(height) {
+        const resolvedHeight = height || document.documentElement.scrollHeight;
+        this.send(this.MESSAGE_SET_FRAME_HEIGHT, { height: resolvedHeight });
+      },
+
+      setComponentValue(value) {
+        this.send(this.MESSAGE_SET_COMPONENT_VALUE, { value });
+      },
+    };
 
     function formatInt(value) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-      return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+      const num = Number(value);
+      if (!Number.isFinite(num)) return "-";
+      return num.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
     }
 
-    function Workspace({ payload }) {
-      const empreendimentos = payload.empreendimentos || [];
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderWorkspace(payload) {
       const summary = payload.summary || {};
+      const options = Array.isArray(payload.empreendimentos) ? payload.empreendimentos : [];
+      const selected = payload.selectedEmpreendimento || "";
 
-      const [selected, setSelected] = useState(payload.selectedEmpreendimento || "");
+      const optionsHtml = ['<option value="">All empreendimentos</option>']
+        .concat(
+          options.map((name) => {
+            const safe = escapeHtml(name);
+            const isSelected = selected === name ? " selected" : "";
+            return `<option value="${safe}"${isSelected}>${safe}</option>`;
+          })
+        )
+        .join("");
 
-      useEffect(() => {
-        setSelected(payload.selectedEmpreendimento || "");
-      }, [payload.selectedEmpreendimento, payload.sourceToken]);
+      const chipHtml = options
+        .slice(0, 10)
+        .map((name) => {
+          const safe = escapeHtml(name);
+          const className = selected === name ? "chip active" : "chip";
+          return `<button class="${className}" data-chip="${safe}" title="${safe}">${safe}</button>`;
+        })
+        .join("");
 
-      const chips = useMemo(() => empreendimentos.slice(0, 10), [empreendimentos]);
+      root.innerHTML = `
+        <div class="workspace">
+          <div class="header">
+            <div class="title">React Workspace (POC)</div>
+            <div class="hint">Bridge local sem dependencia de CDN</div>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <div class="metric-label">Rows</div>
+              <div class="metric-value">${formatInt(summary.rows || 0)}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Months</div>
+              <div class="metric-value">${formatInt(summary.months || 0)}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Empreend.</div>
+              <div class="metric-value">${formatInt(summary.empreendimentos || 0)}</div>
+            </div>
+          </div>
+          <div class="controls">
+            <select id="focus-select">${optionsHtml}</select>
+            <button id="apply-focus">Apply</button>
+          </div>
+          <div class="chips">${chipHtml}</div>
+          <div class="footer">POC streamlit component with local assets.</div>
+        </div>
+      `;
 
-      function submitSelection(value) {
-        const selectedEmpreendimento = value || "";
-        setSelected(selectedEmpreendimento);
-        Streamlit.setComponentValue({
+      const selectEl = document.getElementById("focus-select");
+      const applyBtn = document.getElementById("apply-focus");
+
+      function submit(value) {
+        Bridge.setComponentValue({
           action: "set_focus",
-          selectedEmpreendimento,
+          selectedEmpreendimento: value || "",
         });
       }
 
-      return React.createElement(
-        "div",
-        { className: "workspace" },
-        React.createElement(
-          "div",
-          { className: "header" },
-          React.createElement("div", { className: "title" }, "React Workspace (POC)"),
-          React.createElement(
-            "div",
-            { className: "hint" },
-            "Use this to focus one empreendimento"
-          )
-        ),
-        React.createElement(
-          "div",
-          { className: "metrics" },
-          React.createElement(
-            "div",
-            { className: "metric" },
-            React.createElement("div", { className: "metric-label" }, "Rows"),
-            React.createElement("div", { className: "metric-value" }, formatInt(summary.rows || 0))
-          ),
-          React.createElement(
-            "div",
-            { className: "metric" },
-            React.createElement("div", { className: "metric-label" }, "Months"),
-            React.createElement("div", { className: "metric-value" }, formatInt(summary.months || 0))
-          ),
-          React.createElement(
-            "div",
-            { className: "metric" },
-            React.createElement("div", { className: "metric-label" }, "Empreend."),
-            React.createElement("div", { className: "metric-value" }, formatInt(summary.empreendimentos || 0))
-          )
-        ),
-        React.createElement(
-          "div",
-          { className: "controls" },
-          React.createElement(
-            "select",
-            {
-              value: selected,
-              onChange: (event) => setSelected(event.target.value),
-            },
-            React.createElement("option", { value: "" }, "All empreendimentos"),
-            ...empreendimentos.map((name) =>
-              React.createElement("option", { key: name, value: name }, name)
-            )
-          ),
-          React.createElement(
-            "button",
-            { onClick: () => submitSelection(selected) },
-            "Apply"
-          )
-        ),
-        React.createElement(
-          "div",
-          { className: "chips" },
-          ...chips.map((name) =>
-            React.createElement(
-              "button",
-              {
-                key: name,
-                className: selected === name ? "chip active" : "chip",
-                onClick: () => submitSelection(name),
-                title: name,
-              },
-              name
-            )
-          )
-        ),
-        React.createElement(
-          "div",
-          { className: "footer" },
-          "This is the bridge contract between Streamlit state and React interactions."
-        )
-      );
+      if (applyBtn && selectEl) {
+        applyBtn.addEventListener("click", () => submit(selectEl.value));
+      }
+
+      root.querySelectorAll("[data-chip]").forEach((chipEl) => {
+        chipEl.addEventListener("click", () => {
+          const value = chipEl.getAttribute("data-chip") || "";
+          if (selectEl) {
+            selectEl.value = value;
+          }
+          submit(value);
+        });
+      });
+
+      window.setTimeout(() => Bridge.setFrameHeight(), 0);
     }
 
-    function onRender(event) {
-      const args = event.detail.args || {};
-      const payload = args.payload || {};
-      root.render(React.createElement(Workspace, { payload }));
-      window.setTimeout(() => Streamlit.setFrameHeight(), 0);
-    }
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== Bridge.MESSAGE_RENDER) {
+        return;
+      }
 
-    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
-    Streamlit.setComponentReady();
-    Streamlit.setFrameHeight(520);
+      const payload = (data.args && data.args.payload) || {};
+      renderWorkspace(payload);
+    });
+
+    Bridge.setComponentReady();
+    Bridge.setFrameHeight(520);
   </script>
 </body>
 </html>
