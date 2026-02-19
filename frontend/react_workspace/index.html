@@ -1,0 +1,270 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>React Workspace</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/streamlit-component-lib@latest/dist/index.js"></script>
+  <style>
+    :root {
+      --bg: #f8f7f2;
+      --panel: #ffffff;
+      --ink: #10232c;
+      --muted: #5f6f76;
+      --line: #d9dfdc;
+      --accent: #2e5f4f;
+      --accent-soft: #e6efe9;
+      --radius: 14px;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+    }
+
+    .workspace {
+      background: linear-gradient(145deg, #fafaf7 0%, #f2f6f3 60%, #eef4f1 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 10px;
+      min-height: 62px;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 2px;
+      line-height: 1;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    select {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 8px 10px;
+      font-size: 13px;
+      width: 100%;
+      background: var(--panel);
+      color: var(--ink);
+    }
+
+    button {
+      border: 1px solid var(--accent);
+      border-radius: 9px;
+      background: var(--accent);
+      color: #fff;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      max-width: 100%;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+
+    .chip.active {
+      background: var(--accent-soft);
+      border-color: #9cb9aa;
+      color: #133427;
+      font-weight: 600;
+    }
+
+    .footer {
+      font-size: 11px;
+      color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const { useMemo, useState, useEffect } = React;
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+
+    function formatInt(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+      return Number(value).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+    }
+
+    function Workspace({ payload }) {
+      const empreendimentos = payload.empreendimentos || [];
+      const summary = payload.summary || {};
+
+      const [selected, setSelected] = useState(payload.selectedEmpreendimento || "");
+
+      useEffect(() => {
+        setSelected(payload.selectedEmpreendimento || "");
+      }, [payload.selectedEmpreendimento, payload.sourceToken]);
+
+      const chips = useMemo(() => empreendimentos.slice(0, 10), [empreendimentos]);
+
+      function submitSelection(value) {
+        const selectedEmpreendimento = value || "";
+        setSelected(selectedEmpreendimento);
+        Streamlit.setComponentValue({
+          action: "set_focus",
+          selectedEmpreendimento,
+        });
+      }
+
+      return React.createElement(
+        "div",
+        { className: "workspace" },
+        React.createElement(
+          "div",
+          { className: "header" },
+          React.createElement("div", { className: "title" }, "React Workspace (POC)"),
+          React.createElement(
+            "div",
+            { className: "hint" },
+            "Use this to focus one empreendimento"
+          )
+        ),
+        React.createElement(
+          "div",
+          { className: "metrics" },
+          React.createElement(
+            "div",
+            { className: "metric" },
+            React.createElement("div", { className: "metric-label" }, "Rows"),
+            React.createElement("div", { className: "metric-value" }, formatInt(summary.rows || 0))
+          ),
+          React.createElement(
+            "div",
+            { className: "metric" },
+            React.createElement("div", { className: "metric-label" }, "Months"),
+            React.createElement("div", { className: "metric-value" }, formatInt(summary.months || 0))
+          ),
+          React.createElement(
+            "div",
+            { className: "metric" },
+            React.createElement("div", { className: "metric-label" }, "Empreend."),
+            React.createElement("div", { className: "metric-value" }, formatInt(summary.empreendimentos || 0))
+          )
+        ),
+        React.createElement(
+          "div",
+          { className: "controls" },
+          React.createElement(
+            "select",
+            {
+              value: selected,
+              onChange: (event) => setSelected(event.target.value),
+            },
+            React.createElement("option", { value: "" }, "All empreendimentos"),
+            ...empreendimentos.map((name) =>
+              React.createElement("option", { key: name, value: name }, name)
+            )
+          ),
+          React.createElement(
+            "button",
+            { onClick: () => submitSelection(selected) },
+            "Apply"
+          )
+        ),
+        React.createElement(
+          "div",
+          { className: "chips" },
+          ...chips.map((name) =>
+            React.createElement(
+              "button",
+              {
+                key: name,
+                className: selected === name ? "chip active" : "chip",
+                onClick: () => submitSelection(name),
+                title: name,
+              },
+              name
+            )
+          )
+        ),
+        React.createElement(
+          "div",
+          { className: "footer" },
+          "This is the bridge contract between Streamlit state and React interactions."
+        )
+      );
+    }
+
+    function onRender(event) {
+      const args = event.detail.args || {};
+      const payload = args.payload || {};
+      root.render(React.createElement(Workspace, { payload }));
+      window.setTimeout(() => Streamlit.setFrameHeight(), 0);
+    }
+
+    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight(520);
+  </script>
+</body>
+</html>

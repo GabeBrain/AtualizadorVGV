@@ -6,6 +6,7 @@ Starter Streamlit para analise de arquivos Excel, com foco em:
 - KPIs e visualizacao de dados
 - qualidade e exportacao de dados tratados
 - padrao visual Brain (tokens e CSS centralizados)
+- comparacao entre experiencia nativa e POC React
 
 ## Rodar localmente
 
@@ -28,6 +29,12 @@ src/
   theme.py
   io_excel.py
   analytics.py
+  vgv_core.py
+  react_component.py
+pages/
+  5_React_POC.py
+frontend/
+  react_workspace/index.html
 .streamlit/config.toml
 ```
 
