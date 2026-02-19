@@ -4,6 +4,15 @@ from pathlib import Path
 
 import streamlit as st
 
+_NAV_ITEMS: list[tuple[str, str]] = [
+    ("app.py", "Visao Geral (Nativa)"),
+    ("pages/1_Upload.py", "Upload"),
+    ("pages/2_Analises.py", "Analises"),
+    ("pages/3_Qualidade.py", "Qualidade"),
+    ("pages/4_Reajuste_INCC.py", "Reajuste INCC"),
+    ("pages/5_React_POC.py", "React POC"),
+]
+
 _THEME_CSS = """
 <style>
     :root {
@@ -113,13 +122,21 @@ def apply_brain_theme() -> None:
 
 
 def render_sidebar_menu() -> None:
-    """Render lightweight sidebar branding using native Streamlit page navigation."""
+    """Render sidebar branding and manual navigation links."""
     logo_path = _resolve_logo_path()
-    if not logo_path:
-        return
+    with st.sidebar:
+        if logo_path:
+            try:
+                st.logo(logo_path, size="small")
+            except Exception:
+                st.image(logo_path, width=56)
 
-    try:
-        st.logo(logo_path, size="small")
-    except Exception:
-        with st.sidebar:
-            st.image(logo_path, width=56)
+        st.markdown("### Navegacao")
+        sidebar_page_link = getattr(st.sidebar, "page_link", None)
+        if callable(sidebar_page_link):
+            for page_path, label in _NAV_ITEMS:
+                st.page_link(page_path, label=label)
+        else:
+            for page_path, label in _NAV_ITEMS:
+                if st.button(label, width="stretch", key=f"nav_{page_path}"):
+                    st.switch_page(page_path)
