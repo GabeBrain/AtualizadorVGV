@@ -6,7 +6,7 @@ import streamlit as st
 
 _NAV_ITEMS: list[tuple[str, str]] = [
     ("app.py", "Atualizador de VGV"),
-    ("pages/1_Comparador_Indices.py", "Comparador de Índices"),
+    ("pages/1_Comparador_Indices.py", "Comparador de \u00cdndices"),
 ]
 
 _THEME_CSS = """
@@ -112,6 +112,15 @@ def _resolve_logo_path() -> str | None:
     return None
 
 
+def _available_nav_items() -> list[tuple[str, str]]:
+    root = Path(__file__).resolve().parents[1]
+    available: list[tuple[str, str]] = []
+    for page_path, label in _NAV_ITEMS:
+        if (root / page_path).exists():
+            available.append((page_path, label))
+    return available
+
+
 def apply_brain_theme() -> None:
     """Apply shared CSS tokens and component styling."""
     st.markdown(_THEME_CSS, unsafe_allow_html=True)
@@ -120,6 +129,8 @@ def apply_brain_theme() -> None:
 def render_sidebar_menu() -> None:
     """Render sidebar branding and manual navigation links."""
     logo_path = _resolve_logo_path()
+    nav_items = _available_nav_items()
+
     with st.sidebar:
         if logo_path:
             try:
@@ -128,10 +139,17 @@ def render_sidebar_menu() -> None:
                 st.image(logo_path, width=112)
 
         sidebar_page_link = getattr(st.sidebar, "page_link", None)
-        if callable(sidebar_page_link):
-            for page_path, label in _NAV_ITEMS:
-                st.page_link(page_path, label=label)
-        else:
-            for page_path, label in _NAV_ITEMS:
-                if st.button(label, width="stretch", key=f"nav_{page_path}"):
+
+        for page_path, label in nav_items:
+            if callable(sidebar_page_link):
+                try:
+                    st.page_link(page_path, label=label)
+                    continue
+                except Exception:
+                    pass
+
+            if st.button(label, width="stretch", key=f"nav_{page_path}"):
+                try:
                     st.switch_page(page_path)
+                except Exception:
+                    pass
