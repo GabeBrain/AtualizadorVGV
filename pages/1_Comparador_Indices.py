@@ -4,13 +4,16 @@ from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
+import pydeck as pdk
 import streamlit as st
 
 from src.comparador_component import render_comparador_workspace
 from src.theme import apply_brain_theme, render_sidebar_menu
 from src.vgv_core import clean_options as core_clean_options
 from src.vgv_core import find_column as core_find_column
+from src.vgv_core import map_style_light as core_map_style_light
 from src.vgv_core import source_token as core_source_token
+from src.vgv_core import status_color as core_status_color
 from src.vgv_parser import parse_vgv_workbook
 
 APP_NAME = "Comparador de Índices"
@@ -86,6 +89,14 @@ def _as_float(value: object) -> float | None:
     if pd.isna(number):
         return None
     return number
+
+
+def _status_color(status_value: object) -> list[int]:
+    return core_status_color(status_value)
+
+
+def _map_style_light() -> str:
+    return core_map_style_light(pdk)
 
 
 def _rehydrate_shared_source_if_needed() -> tuple[str | None, str, pd.DataFrame | None, pd.DataFrame | None]:
@@ -328,5 +339,64 @@ filtered_df = _apply_filters(
 
 st.success(f"Fonte compartilhada ativa: {shared_source_name}")
 st.caption(f"Registros apos filtros (workspace V1): {len(filtered_df)}")
+
+map_rendered = False
+if latitude_col and longitude_col:
+    map_df = filtered_df.copy()
+    map_df["__lat"] = pd.to_numeric(map_df[latitude_col], errors="coerce")
+    map_df["__lon"] = pd.to_numeric(map_df[longitude_col], errors="coerce")
+    map_df = map_df.dropna(subset=["__lat", "__lon"])
+
+    if not map_df.empty:
+        map_df["__empreendimento"] = map_df[empreendimento_col].astype(str)
+        map_df["__cidade"] = map_df[cidade_col].astype(str) if cidade_col else "-"
+        map_df["__tipologia"] = map_df[tipologia_col].astype(str) if tipologia_col else "-"
+        map_df["__status"] = map_df[status_col].astype(str) if status_col else "-"
+        map_df["__color"] = map_df["__status"].apply(_status_color)
+
+        center_lat = float(map_df["__lat"].mean())
+        center_lon = float(map_df["__lon"].mean())
+
+        st.subheader("Mapa nativo reativo")
+        deck = pdk.Deck(
+            map_style=_map_style_light(),
+            initial_view_state=pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+                zoom=5.2,
+                pitch=24,
+            ),
+            layers=[
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_df,
+                    get_position="[__lon, __lat]",
+                    get_fill_color="__color",
+                    get_line_color=[255, 255, 255, 220],
+                    get_line_width=1,
+                    stroked=True,
+                    get_radius=420,
+                    radius_min_pixels=5,
+                    radius_max_pixels=14,
+                    pickable=True,
+                    auto_highlight=True,
+                ),
+            ],
+            tooltip={
+                "html": (
+                    "<b>{__empreendimento}</b><br/>"
+                    "Cidade: {__cidade}<br/>"
+                    "Tipologia: {__tipologia}<br/>"
+                    "Status: {__status}"
+                ),
+                "style": {"backgroundColor": "#ffffff", "color": "#111827"},
+            },
+        )
+        st.pydeck_chart(deck)
+        map_rendered = True
+
+if not map_rendered:
+    st.info("Mapa nativo indisponivel para os filtros atuais (faltam coordenadas validas).")
+
 st.subheader("Dataframe resultante dos filtros")
 st.dataframe(filtered_df, width="stretch", hide_index=True)

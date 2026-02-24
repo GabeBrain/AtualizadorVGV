@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Comparador Workspace V1</title>
+  <title>Painel VGV Interativo</title>
   <style>
     :root {
       --brain-primary: #5b7537;
@@ -278,7 +278,7 @@
       border: 1px solid var(--line);
       border-radius: 12px;
       overflow: hidden;
-      background: var(--surface);
+      background: linear-gradient(180deg, #f3f8ec 0%, #eaf2e2 100%);
       position: relative;
       min-height: 560px;
     }
@@ -697,6 +697,40 @@
           rx: 8
         })
       );
+
+      // Silhueta aproximada do Brasil para dar contexto visual ao geoplote.
+      const brazilOutline = [
+        [-73.9, -33.8],
+        [-70.8, -12.4],
+        [-62.2, 4.4],
+        [-50.5, 4.9],
+        [-34.9, -7.8],
+        [-38.8, -13.8],
+        [-43.8, -22.4],
+        [-49.4, -29.7],
+        [-55.1, -31.2],
+        [-58.6, -27.8],
+        [-62.6, -20.5],
+        [-66.8, -9.9],
+        [-73.9, -33.8]
+      ];
+
+      const projectedOutline = brazilOutline
+        .map(([lon, lat]) => projectPoint(lat, lon, bounds, width, height, pad))
+        .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+        .join(" ");
+
+      if (projectedOutline) {
+        svg.appendChild(
+          svgEl("path", {
+            d: `${projectedOutline} Z`,
+            fill: "#dfe9d2",
+            stroke: "#a9bc97",
+            "stroke-width": 1.4,
+            opacity: 0.58
+          })
+        );
+      }
 
       const selectedEmp = new Set(asArray(state.filters.empreendimentos));
       const pointGroup = svgEl("g");
