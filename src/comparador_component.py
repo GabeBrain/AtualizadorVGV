@@ -8,12 +8,12 @@ import streamlit.components.v1 as components
 _COMPONENT_DIR = Path(__file__).resolve().parents[1] / "frontend" / "comparador_workspace"
 
 _comparador_workspace_component = components.declare_component(
-    "comparador_workspace_v4",
+    "comparador_workspace_v5",
     path=str(_COMPONENT_DIR),
 )
 
 
-def render_comparador_workspace(payload: dict[str, Any], key: str = "comparador_workspace_v4") -> dict[str, Any]:
+def render_comparador_workspace(payload: dict[str, Any], key: str = "comparador_workspace_v5") -> dict[str, Any]:
     """Render the filter+map workspace component and return interaction payload."""
     default_value: dict[str, Any] = {
         "action": "init",

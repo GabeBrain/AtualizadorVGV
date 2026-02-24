@@ -14,7 +14,7 @@ from src.vgv_core import source_token as core_source_token
 from src.vgv_parser import parse_vgv_workbook
 
 APP_NAME = "Comparador de Indices"
-WORKSPACE_VERSION = "V4.1"
+WORKSPACE_VERSION = "V4.2"
 SHARED_SOURCE_TOKEN_KEY = "__shared_source_token"
 SHARED_SOURCE_NAME_KEY = "__shared_source_name"
 SHARED_BASE_DF_KEY = "__shared_base_df"
@@ -293,7 +293,7 @@ component_payload = {
 
 component_event = render_comparador_workspace(
     payload=component_payload,
-    key=f"comparador_workspace_v4_{shared_token}",
+    key=f"comparador_workspace_v5_{shared_token}",
 )
 
 if isinstance(component_event, dict):

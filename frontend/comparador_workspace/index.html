@@ -31,6 +31,129 @@
       font-family: "Segoe UI", Arial, sans-serif;
     }
 
+    /* Leaflet critical CSS fallback: keeps map panes/tiles visible even if CDN CSS fails. */
+    .leaflet-container {
+      position: relative;
+      overflow: hidden;
+      outline: 0;
+    }
+
+    .leaflet-pane,
+    .leaflet-tile,
+    .leaflet-marker-icon,
+    .leaflet-marker-shadow,
+    .leaflet-tile-container,
+    .leaflet-pane > svg,
+    .leaflet-pane > canvas,
+    .leaflet-zoom-box,
+    .leaflet-image-layer,
+    .leaflet-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+
+    .leaflet-pane {
+      z-index: 400;
+    }
+
+    .leaflet-tile-pane {
+      z-index: 200;
+    }
+
+    .leaflet-overlay-pane {
+      z-index: 400;
+    }
+
+    .leaflet-shadow-pane {
+      z-index: 500;
+    }
+
+    .leaflet-marker-pane {
+      z-index: 600;
+    }
+
+    .leaflet-tooltip-pane {
+      z-index: 650;
+    }
+
+    .leaflet-popup-pane {
+      z-index: 700;
+    }
+
+    .leaflet-top,
+    .leaflet-bottom {
+      position: absolute;
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .leaflet-top {
+      top: 0;
+    }
+
+    .leaflet-bottom {
+      bottom: 0;
+    }
+
+    .leaflet-left {
+      left: 0;
+    }
+
+    .leaflet-right {
+      right: 0;
+    }
+
+    .leaflet-control {
+      position: relative;
+      z-index: 800;
+      pointer-events: auto;
+    }
+
+    .leaflet-control-zoom {
+      margin: 12px;
+      border: 1px solid #c7d2bf;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(17, 24, 39, 0.12);
+    }
+
+    .leaflet-control-zoom a {
+      display: block;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      text-decoration: none;
+      color: #1f2937;
+      font-weight: 700;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fff;
+    }
+
+    .leaflet-control-zoom a:last-child {
+      border-bottom: 0;
+    }
+
+    .leaflet-control-attribution {
+      margin: 0 8px 8px;
+      padding: 2px 6px;
+      border: 1px solid #d8e0cf;
+      border-radius: 999px;
+      font-size: 10px;
+      color: #4b5563;
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .leaflet-tile {
+      visibility: hidden;
+    }
+
+    .leaflet-tile-loaded {
+      visibility: inherit;
+    }
+
     .workspace {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -397,7 +520,8 @@
       mapMode: "fallback",
       latestRows: [],
       tileTimeoutId: null,
-      tileLoadedOnce: false
+      tileLoadedOnce: false,
+      leafletCssReady: null
     };
 
     function safeText(value) {
@@ -458,6 +582,17 @@
         }
       });
       return el;
+    }
+
+    function detectLeafletCss(mapNode) {
+      if (!mapNode || !window.getComputedStyle) return false;
+      const probe = document.createElement("div");
+      probe.className = "leaflet-pane";
+      mapNode.appendChild(probe);
+      const css = window.getComputedStyle(probe);
+      const ok = css.position === "absolute";
+      mapNode.removeChild(probe);
+      return ok;
     }
 
     function normalizeFilters(rawFilters, options) {
@@ -590,7 +725,7 @@
       if (filteredEmpEl) filteredEmpEl.textContent = formatInt(filteredEmp);
       if (badgeRows) badgeRows.textContent = `${formatInt(filteredRows.length)} linhas`;
       if (badgePoints) badgePoints.textContent = `${formatInt(mapPoints)} pontos`;
-      if (badgeMode) badgeMode.textContent = state.mapMode === "leaflet" ? "Leaflet/CARTO" : "Mapa local (V4.1)";
+      if (badgeMode) badgeMode.textContent = state.mapMode === "leaflet" ? "Leaflet/CARTO" : "Mapa local (V4.2)";
     }
 
     function setMapOverlayMessage(message) {
@@ -612,6 +747,13 @@
 
       const mapNode = document.getElementById("leaflet-map");
       if (!mapNode) {
+        return false;
+      }
+
+      if (state.leafletCssReady === null) {
+        state.leafletCssReady = detectLeafletCss(mapNode);
+      }
+      if (!state.leafletCssReady) {
         return false;
       }
 
@@ -804,7 +946,11 @@
       if (!hasLeaflet || !state.map || !state.markerLayer) {
         setMapMode("fallback");
         renderFallbackMap(points);
-        setMapOverlayMessage("Leaflet indisponivel no ambiente; exibindo mapa local.");
+        setMapOverlayMessage(
+          state.leafletCssReady === false
+            ? "CSS do mapa indisponivel no iframe; exibindo mapa local."
+            : "Leaflet indisponivel no ambiente; exibindo mapa local."
+        );
         return;
       }
 
@@ -855,6 +1001,9 @@
       if (latlngs.length > 0) {
         const bounds = window.L.latLngBounds(latlngs);
         state.map.fitBounds(bounds, { padding: [26, 26], maxZoom: 12, animate: false });
+        window.setTimeout(() => {
+          if (state.map) state.map.invalidateSize();
+        }, 32);
       }
 
       if (!state.tileHealthy) {
@@ -895,7 +1044,7 @@
     function renderWorkspace(payload) {
       state.payload = payload || {};
       state.filters = normalizeFilters(payload.selectedFilters || {}, payload.options || {});
-      const componentVersion = safeText(payload.componentVersion) || "V4.1";
+      const componentVersion = safeText(payload.componentVersion) || "V4.2";
 
       root.innerHTML = `
         <div class="workspace">
