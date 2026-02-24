@@ -291,7 +291,7 @@ component_payload = {
 
 component_event = render_comparador_workspace(
     payload=component_payload,
-    key=f"comparador_workspace_{shared_token}",
+    key=f"comparador_workspace_v4_{shared_token}",
 )
 
 if isinstance(component_event, dict):

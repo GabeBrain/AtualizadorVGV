@@ -4,11 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel VGV Interativo</title>
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    crossorigin=""
-  />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <style>
     :root {
       --brain-primary: #5b7537;
@@ -47,18 +43,6 @@
       gap: 12px;
       min-height: 760px;
       overflow: hidden;
-      animation: reveal 260ms ease-out;
-    }
-
-    @keyframes reveal {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
     }
 
     .filters-panel {
@@ -195,8 +179,8 @@
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      max-height: 220px;
-      overflow-y: auto;
+      max-height: none;
+      overflow-y: visible;
       padding-right: 2px;
     }
 
@@ -288,11 +272,25 @@
       min-height: 560px;
     }
 
-    #leaflet-map {
+    #leaflet-map,
+    #fallback-map {
       width: 100%;
       height: 100%;
       min-height: 560px;
       display: block;
+    }
+
+    #leaflet-map,
+    .leaflet-container {
+      background:
+        radial-gradient(circle at 70% 25%, rgba(91, 117, 55, 0.18), transparent 35%),
+        linear-gradient(180deg, #f6faef 0%, #e7f0de 100%);
+    }
+
+    #fallback-map {
+      position: absolute;
+      inset: 0;
+      display: none;
       background: linear-gradient(180deg, #f7fbef 0%, #eef4e7 100%);
     }
 
@@ -307,7 +305,7 @@
       font-size: 13px;
       color: var(--muted);
       background: linear-gradient(135deg, #f8faef 0%, #ffffff 100%);
-      z-index: 500;
+      z-index: 600;
       pointer-events: none;
     }
 
@@ -333,7 +331,8 @@
       }
 
       .map-shell,
-      #leaflet-map {
+      #leaflet-map,
+      #fallback-map {
         min-height: 420px;
       }
     }
@@ -343,6 +342,14 @@
   <div id="root"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
+    const NS = "http://www.w3.org/2000/svg";
+    const BRAZIL_BOUNDS = {
+      minLat: -34.5,
+      maxLat: 5.8,
+      minLon: -74.5,
+      maxLon: -33.0
+    };
+
     const FIELD_CONFIG = [
       { field: "empreendimentos", rowKey: "empreendimento", label: "Empreendimento" },
       { field: "cidades", rowKey: "cidade", label: "Cidade" },
@@ -387,7 +394,8 @@
       tileLayer: null,
       markerLayer: null,
       tileHealthy: true,
-      viewInitialized: false
+      mapMode: "leaflet",
+      latestRows: []
     };
 
     function safeText(value) {
@@ -396,7 +404,24 @@
     }
 
     function parseNum(value) {
-      const n = Number(value);
+      if (value === null || value === undefined) return null;
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+      }
+
+      const text = safeText(value).replace(/\s+/g, "");
+      if (!text) return null;
+
+      let normalized = text;
+      if (/^-?\d+,\d+$/.test(text)) {
+        normalized = text.replace(",", ".");
+      } else if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(text)) {
+        normalized = text.replace(/\./g, "").replace(",", ".");
+      } else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) {
+        normalized = text.replace(/,/g, "");
+      }
+
+      const n = Number(normalized);
       return Number.isFinite(n) ? n : null;
     }
 
@@ -421,6 +446,16 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    function svgEl(name, attrs = {}) {
+      const el = document.createElementNS(NS, name);
+      Object.entries(attrs).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          el.setAttribute(key, String(value));
+        }
+      });
+      return el;
     }
 
     function normalizeFilters(rawFilters, options) {
@@ -543,6 +578,7 @@
       const filteredEmpEl = document.getElementById("metric-filtered-emp");
       const badgeRows = document.getElementById("badge-rows");
       const badgePoints = document.getElementById("badge-points");
+      const badgeMode = document.getElementById("badge-mode");
 
       const filteredEmp = new Set(
         filteredRows.map((row) => safeText(row.empreendimento)).filter(Boolean)
@@ -552,6 +588,7 @@
       if (filteredEmpEl) filteredEmpEl.textContent = formatInt(filteredEmp);
       if (badgeRows) badgeRows.textContent = `${formatInt(filteredRows.length)} linhas`;
       if (badgePoints) badgePoints.textContent = `${formatInt(mapPoints)} pontos`;
+      if (badgeMode) badgeMode.textContent = state.mapMode === "leaflet" ? "Leaflet/CARTO" : "Mapa local";
     }
 
     function setMapOverlayMessage(message) {
@@ -562,13 +599,12 @@
         emptyEl.textContent = "";
         return;
       }
-      emptyEl.textContent = message;
       emptyEl.classList.add("visible");
+      emptyEl.textContent = message;
     }
 
     function ensureLeafletMap() {
       if (!window.L) {
-        setMapOverlayMessage("Nao foi possivel carregar a biblioteca de mapa (Leaflet).");
         return false;
       }
 
@@ -581,7 +617,7 @@
         state.map = window.L.map(mapNode, {
           zoomControl: true,
           attributionControl: true,
-          preferCanvas: true
+          preferCanvas: true,
         });
 
         state.tileLayer = window.L.tileLayer(
@@ -589,49 +625,179 @@
           {
             subdomains: "abcd",
             maxZoom: 19,
-            attribution: "&copy; OpenStreetMap &copy; CARTO"
+            attribution: "&copy; OpenStreetMap &copy; CARTO",
           }
         );
 
         state.tileLayer.on("tileerror", () => {
           state.tileHealthy = false;
+          if (state.latestRows.length > 0) {
+            renderMap(state.latestRows);
+          }
         });
 
         state.tileLayer.on("load", () => {
           state.tileHealthy = true;
+          if (state.latestRows.length > 0 && state.mapMode !== "leaflet") {
+            renderMap(state.latestRows);
+          }
         });
 
         state.tileLayer.addTo(state.map);
         state.markerLayer = window.L.layerGroup().addTo(state.map);
-
         state.map.setView([-14.235, -51.9253], 4);
       }
 
       window.setTimeout(() => {
-        if (state.map) {
-          state.map.invalidateSize();
-        }
+        if (state.map) state.map.invalidateSize();
       }, 0);
 
       return true;
     }
 
-    function renderLeafletMap(filteredRows) {
-      const hasMap = ensureLeafletMap();
-      if (!hasMap || !state.map || !state.markerLayer) {
-        return;
+    function setMapMode(mode) {
+      const leaf = document.getElementById("leaflet-map");
+      const fallback = document.getElementById("fallback-map");
+      if (!leaf || !fallback) return;
+      state.mapMode = mode === "leaflet" ? "leaflet" : "fallback";
+
+      if (state.mapMode === "leaflet") {
+        leaf.style.display = "block";
+        fallback.style.display = "none";
+      } else {
+        leaf.style.display = "none";
+        fallback.style.display = "block";
       }
+    }
 
-      state.markerLayer.clearLayers();
+    function projectPoint(lat, lon, width, height, pad) {
+      const x = pad + ((lon - BRAZIL_BOUNDS.minLon) / (BRAZIL_BOUNDS.maxLon - BRAZIL_BOUNDS.minLon)) * (width - pad * 2);
+      const y = height - pad - ((lat - BRAZIL_BOUNDS.minLat) / (BRAZIL_BOUNDS.maxLat - BRAZIL_BOUNDS.minLat)) * (height - pad * 2);
+      return { x, y };
+    }
 
+    function renderFallbackMap(points) {
+      const svg = document.getElementById("fallback-map");
+      if (!svg) return;
+
+      svg.innerHTML = "";
+      const rect = svg.getBoundingClientRect();
+      const width = Math.max(640, rect.width || 640);
+      const height = Math.max(520, rect.height || 520);
+      const pad = 36;
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+      const defs = svgEl("defs");
+      const gradient = svgEl("linearGradient", { id: "fallback-bg", x1: "0", y1: "0", x2: "0", y2: "1" });
+      gradient.appendChild(svgEl("stop", { offset: "0%", "stop-color": "#f7fbef" }));
+      gradient.appendChild(svgEl("stop", { offset: "100%", "stop-color": "#edf4e4" }));
+      defs.appendChild(gradient);
+      svg.appendChild(defs);
+
+      svg.appendChild(
+        svgEl("rect", { x: 0, y: 0, width, height, fill: "url(#fallback-bg)" })
+      );
+
+      const brazilOutline = [
+        [-73.9, -33.8],
+        [-70.8, -12.4],
+        [-62.2, 4.4],
+        [-50.5, 4.9],
+        [-34.9, -7.8],
+        [-38.8, -13.8],
+        [-43.8, -22.4],
+        [-49.4, -29.7],
+        [-55.1, -31.2],
+        [-58.6, -27.8],
+        [-62.6, -20.5],
+        [-66.8, -9.9],
+        [-73.9, -33.8]
+      ];
+
+      const projectedOutline = brazilOutline
+        .map(([lon, lat]) => projectPoint(lat, lon, width, height, pad))
+        .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+        .join(" ");
+
+      svg.appendChild(
+        svgEl("path", {
+          d: `${projectedOutline} Z`,
+          fill: "#dfead0",
+          stroke: "#a8bc96",
+          "stroke-width": 1.5,
+          opacity: 0.9,
+        })
+      );
+
+      const selectedEmp = new Set(asArray(state.filters.empreendimentos));
+      const group = svgEl("g");
+
+      points.forEach((row) => {
+        const pos = projectPoint(row.lat, row.lon, width, height, pad);
+        const isSelected = selectedEmp.size > 0 && selectedEmp.has(safeText(row.empreendimento));
+
+        const circle = svgEl("circle", {
+          cx: pos.x,
+          cy: pos.y,
+          r: isSelected ? 7.2 : 5.5,
+          fill: isSelected ? "#f8d000" : "#587030",
+          stroke: isSelected ? "#5b7537" : "#ffffff",
+          "stroke-width": isSelected ? 2 : 1.2,
+          opacity: 0.92,
+          cursor: "pointer",
+        });
+
+        const title = svgEl("title", {});
+        title.textContent =
+          `${safeText(row.empreendimento) || "-"}\n` +
+          `Cidade: ${safeText(row.cidade) || "-"}\n` +
+          `Tipologia: ${safeText(row.tipologia) || "-"}\n` +
+          `Status: ${safeText(row.status) || "-"}`;
+        circle.appendChild(title);
+
+        circle.addEventListener("click", () => {
+          const emp = safeText(row.empreendimento);
+          if (!emp) return;
+          state.filters.empreendimentos = [emp];
+          emitFilters("marker_click");
+          renderAll();
+        });
+
+        group.appendChild(circle);
+      });
+
+      svg.appendChild(group);
+    }
+
+    function renderMap(filteredRows) {
       const points = filteredRows
         .map((row) => ({ ...row, lat: parseNum(row.lat), lon: parseNum(row.lon) }))
         .filter((row) => row.lat !== null && row.lon !== null);
 
       if (points.length === 0) {
+        setMapMode("fallback");
+        renderFallbackMap(points);
         setMapOverlayMessage("Sem coordenadas validas para os filtros atuais.");
         return;
       }
+
+      const hasLeaflet = ensureLeafletMap();
+      if (!hasLeaflet || !state.map || !state.markerLayer) {
+        setMapMode("fallback");
+        renderFallbackMap(points);
+        setMapOverlayMessage("Leaflet indisponivel no ambiente; exibindo mapa local.");
+        return;
+      }
+
+      if (!state.tileHealthy) {
+        setMapMode("fallback");
+        renderFallbackMap(points);
+        setMapOverlayMessage("Camada base externa indisponivel; exibindo mapa local.");
+        return;
+      }
+
+      setMapMode("leaflet");
+      state.markerLayer.clearLayers();
 
       const selectedEmp = new Set(asArray(state.filters.empreendimentos));
       const latlngs = [];
@@ -644,14 +810,14 @@
           color: isSelected ? "#5b7537" : "#ffffff",
           weight: isSelected ? 2 : 1.2,
           fillColor: isSelected ? "#f8d000" : "#587030",
-          fillOpacity: isSelected ? 0.92 : 0.82
+          fillOpacity: isSelected ? 0.92 : 0.82,
         });
 
         marker.bindTooltip(
           `<b>${escapeHtml(row.empreendimento || "-")}</b><br/>` +
-          `Cidade: ${escapeHtml(row.cidade || "-")}<br/>` +
-          `Tipologia: ${escapeHtml(row.tipologia || "-")}<br/>` +
-          `Status: ${escapeHtml(row.status || "-")}`,
+            `Cidade: ${escapeHtml(row.cidade || "-")}<br/>` +
+            `Tipologia: ${escapeHtml(row.tipologia || "-")}<br/>` +
+            `Status: ${escapeHtml(row.status || "-")}`,
           { direction: "top", sticky: true }
         );
 
@@ -669,15 +835,13 @@
 
       if (latlngs.length > 0) {
         const bounds = window.L.latLngBounds(latlngs);
-        state.map.fitBounds(bounds, {
-          padding: [26, 26],
-          maxZoom: 12,
-          animate: false
-        });
+        state.map.fitBounds(bounds, { padding: [26, 26], maxZoom: 12, animate: false });
       }
 
       if (!state.tileHealthy) {
-        setMapOverlayMessage("Camada base indisponivel agora; exibindo pontos sem tile.");
+        setMapMode("fallback");
+        renderFallbackMap(points);
+        setMapOverlayMessage("Camada CARTO indisponivel; exibindo mapa local.");
       } else {
         setMapOverlayMessage("");
       }
@@ -686,8 +850,9 @@
     function renderAll() {
       renderFilterGroups();
       const filteredRows = getFilteredRows();
+      state.latestRows = filteredRows;
       renderSummary(filteredRows);
-      renderLeafletMap(filteredRows);
+      renderMap(filteredRows);
       window.setTimeout(() => Bridge.setFrameHeight(), 0);
     }
 
@@ -735,14 +900,16 @@
               <div class="map-badges">
                 <span id="badge-rows" class="badge">-</span>
                 <span id="badge-points" class="badge">-</span>
+                <span id="badge-mode" class="badge">-</span>
               </div>
             </div>
             <div class="map-shell">
               <div id="leaflet-map"></div>
+              <svg id="fallback-map" preserveAspectRatio="xMidYMid meet"></svg>
               <div id="map-empty" class="map-empty"></div>
             </div>
             <div class="footer">
-              Base CARTO Light. Clique em um ponto para focar o empreendimento.
+              Componente V4 | CARTO + fallback local. Clique em um ponto para focar o empreendimento.
             </div>
           </section>
         </div>
@@ -777,7 +944,7 @@
     });
 
     Bridge.setComponentReady();
-    Bridge.setFrameHeight(860);
+    Bridge.setFrameHeight(900);
   </script>
 </body>
 </html>
