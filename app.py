@@ -300,11 +300,22 @@ FILTER_EMP_KEY = "filter_empreendimentos"
 FILTER_CITY_KEY = "filter_cidades"
 FILTER_TIPO_KEY = "filter_tipologias"
 FILTER_STATUS_KEY = "filter_status"
+FILTER_EMP_WIDGET_KEY = "__widget_filter_empreendimentos"
+FILTER_CITY_WIDGET_KEY = "__widget_filter_cidades"
+FILTER_TIPO_WIDGET_KEY = "__widget_filter_tipologias"
+FILTER_STATUS_WIDGET_KEY = "__widget_filter_status"
 PENDING_MAP_FILTER_KEY = "__pending_map_filter"
 
 for key in (FILTER_EMP_KEY, FILTER_CITY_KEY, FILTER_TIPO_KEY, FILTER_STATUS_KEY):
     st.session_state.setdefault(key, [])
 st.session_state.setdefault(PENDING_MAP_FILTER_KEY, None)
+for state_key, widget_key in (
+    (FILTER_EMP_KEY, FILTER_EMP_WIDGET_KEY),
+    (FILTER_CITY_KEY, FILTER_CITY_WIDGET_KEY),
+    (FILTER_TIPO_KEY, FILTER_TIPO_WIDGET_KEY),
+    (FILTER_STATUS_KEY, FILTER_STATUS_WIDGET_KEY),
+):
+    st.session_state.setdefault(widget_key, list(st.session_state.get(state_key, [])))
 
 
 st.subheader("Filtros")
@@ -326,6 +337,10 @@ if pending_map_filter is not None:
 def _sanitize_filter_state(key: str, options: list[str]) -> None:
     current = st.session_state.get(key, []) or []
     st.session_state[key] = [value for value in current if value in options]
+
+
+def _sync_filter_from_widget(state_key: str, widget_key: str) -> None:
+    st.session_state[state_key] = list(st.session_state.get(widget_key, []) or [])
 
 
 def _filter_with_current_state(exclude_key: str | None = None) -> pd.DataFrame:
@@ -368,11 +383,40 @@ for _ in range(2):
     _sanitize_filter_state(FILTER_STATUS_KEY, filter_options[FILTER_STATUS_KEY])
     filter_options = _build_filter_options()
 
+st.session_state[FILTER_EMP_WIDGET_KEY] = list(st.session_state[FILTER_EMP_KEY])
+st.session_state[FILTER_CITY_WIDGET_KEY] = list(st.session_state[FILTER_CITY_KEY])
+st.session_state[FILTER_TIPO_WIDGET_KEY] = list(st.session_state[FILTER_TIPO_KEY])
+st.session_state[FILTER_STATUS_WIDGET_KEY] = list(st.session_state[FILTER_STATUS_KEY])
+
 fc1, fc2, fc3, fc4 = st.columns(4)
-fc1.multiselect("Empreendimento", options=filter_options[FILTER_EMP_KEY], key=FILTER_EMP_KEY)
-fc2.multiselect("Cidade", options=filter_options[FILTER_CITY_KEY], key=FILTER_CITY_KEY)
-fc3.multiselect("Tipologia", options=filter_options[FILTER_TIPO_KEY], key=FILTER_TIPO_KEY)
-fc4.multiselect("Status atual", options=filter_options[FILTER_STATUS_KEY], key=FILTER_STATUS_KEY)
+fc1.multiselect(
+    "Empreendimento",
+    options=filter_options[FILTER_EMP_KEY],
+    key=FILTER_EMP_WIDGET_KEY,
+    on_change=_sync_filter_from_widget,
+    args=(FILTER_EMP_KEY, FILTER_EMP_WIDGET_KEY),
+)
+fc2.multiselect(
+    "Cidade",
+    options=filter_options[FILTER_CITY_KEY],
+    key=FILTER_CITY_WIDGET_KEY,
+    on_change=_sync_filter_from_widget,
+    args=(FILTER_CITY_KEY, FILTER_CITY_WIDGET_KEY),
+)
+fc3.multiselect(
+    "Tipologia",
+    options=filter_options[FILTER_TIPO_KEY],
+    key=FILTER_TIPO_WIDGET_KEY,
+    on_change=_sync_filter_from_widget,
+    args=(FILTER_TIPO_KEY, FILTER_TIPO_WIDGET_KEY),
+)
+fc4.multiselect(
+    "Status atual",
+    options=filter_options[FILTER_STATUS_KEY],
+    key=FILTER_STATUS_WIDGET_KEY,
+    on_change=_sync_filter_from_widget,
+    args=(FILTER_STATUS_KEY, FILTER_STATUS_WIDGET_KEY),
+)
 
 selected_empreendimentos = st.session_state[FILTER_EMP_KEY]
 selected_cities = st.session_state[FILTER_CITY_KEY]

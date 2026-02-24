@@ -23,6 +23,10 @@ FILTER_EMP_KEY = "comparador_filter_empreendimentos"
 FILTER_CITY_KEY = "comparador_filter_cidades"
 FILTER_TIPO_KEY = "comparador_filter_tipologias"
 FILTER_STATUS_KEY = "comparador_filter_status"
+FILTER_EMP_WIDGET_KEY = "__widget_comparador_filter_empreendimentos"
+FILTER_CITY_WIDGET_KEY = "__widget_comparador_filter_cidades"
+FILTER_TIPO_WIDGET_KEY = "__widget_comparador_filter_tipologias"
+FILTER_STATUS_WIDGET_KEY = "__widget_comparador_filter_status"
 COMPARE_LAST_TOKEN_KEY = "__comparador_last_source_token"
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":balance_scale:")
@@ -53,6 +57,10 @@ def _options_for_column(df: pd.DataFrame, column: str | None) -> list[str]:
 def _sanitize_filter_state(key: str, options: list[str]) -> None:
     current = st.session_state.get(key, []) or []
     st.session_state[key] = [value for value in current if value in options]
+
+
+def _sync_filter_from_widget(state_key: str, widget_key: str) -> None:
+    st.session_state[state_key] = list(st.session_state.get(widget_key, []) or [])
 
 
 def _rehydrate_shared_source_if_needed() -> tuple[str | None, str, pd.DataFrame | None, pd.DataFrame | None]:
@@ -118,6 +126,10 @@ if st.session_state.get(COMPARE_LAST_TOKEN_KEY) != shared_token:
     st.session_state[FILTER_CITY_KEY] = []
     st.session_state[FILTER_TIPO_KEY] = []
     st.session_state[FILTER_STATUS_KEY] = []
+    st.session_state[FILTER_EMP_WIDGET_KEY] = []
+    st.session_state[FILTER_CITY_WIDGET_KEY] = []
+    st.session_state[FILTER_TIPO_WIDGET_KEY] = []
+    st.session_state[FILTER_STATUS_WIDGET_KEY] = []
 
 base_enriched = shared_base_df.copy()
 
@@ -149,6 +161,13 @@ if not empreendimento_col:
 
 for key in (FILTER_EMP_KEY, FILTER_CITY_KEY, FILTER_TIPO_KEY, FILTER_STATUS_KEY):
     st.session_state.setdefault(key, [])
+for state_key, widget_key in (
+    (FILTER_EMP_KEY, FILTER_EMP_WIDGET_KEY),
+    (FILTER_CITY_KEY, FILTER_CITY_WIDGET_KEY),
+    (FILTER_TIPO_KEY, FILTER_TIPO_WIDGET_KEY),
+    (FILTER_STATUS_KEY, FILTER_STATUS_WIDGET_KEY),
+):
+    st.session_state.setdefault(widget_key, list(st.session_state.get(state_key, [])))
 
 emp_options = _options_for_column(base_enriched, empreendimento_col)
 city_options = _options_for_column(base_enriched, cidade_col)
@@ -160,18 +179,50 @@ _sanitize_filter_state(FILTER_CITY_KEY, city_options)
 _sanitize_filter_state(FILTER_TIPO_KEY, tipo_options)
 _sanitize_filter_state(FILTER_STATUS_KEY, status_options)
 
+st.session_state[FILTER_EMP_WIDGET_KEY] = list(st.session_state[FILTER_EMP_KEY])
+st.session_state[FILTER_CITY_WIDGET_KEY] = list(st.session_state[FILTER_CITY_KEY])
+st.session_state[FILTER_TIPO_WIDGET_KEY] = list(st.session_state[FILTER_TIPO_KEY])
+st.session_state[FILTER_STATUS_WIDGET_KEY] = list(st.session_state[FILTER_STATUS_KEY])
+
 st.success(f"Fonte compartilhada ativa: {shared_source_name}")
 st.subheader("Filtros")
 
 f1, f2, f3, f4 = st.columns(4)
 with f1:
-    st.multiselect("Empreendimento", options=emp_options, key=FILTER_EMP_KEY)
+    st.multiselect(
+        "Empreendimento",
+        options=emp_options,
+        key=FILTER_EMP_WIDGET_KEY,
+        on_change=_sync_filter_from_widget,
+        args=(FILTER_EMP_KEY, FILTER_EMP_WIDGET_KEY),
+    )
 with f2:
-    st.multiselect("Cidade", options=city_options, key=FILTER_CITY_KEY, disabled=not city_options)
+    st.multiselect(
+        "Cidade",
+        options=city_options,
+        key=FILTER_CITY_WIDGET_KEY,
+        disabled=not city_options,
+        on_change=_sync_filter_from_widget,
+        args=(FILTER_CITY_KEY, FILTER_CITY_WIDGET_KEY),
+    )
 with f3:
-    st.multiselect("Tipologia", options=tipo_options, key=FILTER_TIPO_KEY, disabled=not tipo_options)
+    st.multiselect(
+        "Tipologia",
+        options=tipo_options,
+        key=FILTER_TIPO_WIDGET_KEY,
+        disabled=not tipo_options,
+        on_change=_sync_filter_from_widget,
+        args=(FILTER_TIPO_KEY, FILTER_TIPO_WIDGET_KEY),
+    )
 with f4:
-    st.multiselect("Status Atual", options=status_options, key=FILTER_STATUS_KEY, disabled=not status_options)
+    st.multiselect(
+        "Status Atual",
+        options=status_options,
+        key=FILTER_STATUS_WIDGET_KEY,
+        disabled=not status_options,
+        on_change=_sync_filter_from_widget,
+        args=(FILTER_STATUS_KEY, FILTER_STATUS_WIDGET_KEY),
+    )
 
 filtered_df = base_enriched.copy()
 
