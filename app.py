@@ -30,6 +30,11 @@ from src.vgv_parser import extract_present_amenities, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
 REAJUSTE_BASE_DATE = pd.Timestamp("2025-12-01")
+SHARED_SOURCE_TOKEN_KEY = "__shared_source_token"
+SHARED_SOURCE_NAME_KEY = "__shared_source_name"
+SHARED_BASE_DF_KEY = "__shared_base_df"
+SHARED_PERF_DF_KEY = "__shared_perf_df"
+SHARED_METADATA_KEY = "__shared_metadata"
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":bar_chart:")
 apply_brain_theme()
@@ -159,6 +164,11 @@ with st.expander("Fonte de dados", expanded=True):
             "source_name",
             "source_bytes",
             "__loaded_source_token",
+            SHARED_SOURCE_TOKEN_KEY,
+            SHARED_SOURCE_NAME_KEY,
+            SHARED_BASE_DF_KEY,
+            SHARED_PERF_DF_KEY,
+            SHARED_METADATA_KEY,
             "selected_empreendimento",
             "filter_empreendimentos",
             "filter_cidades",
@@ -207,6 +217,11 @@ if base_df is None or perf_df is None or metadata is None:
 
 if source_token is not None:
     st.session_state["__loaded_source_token"] = source_token
+    st.session_state[SHARED_SOURCE_TOKEN_KEY] = source_token
+    st.session_state[SHARED_SOURCE_NAME_KEY] = st.session_state.get("source_name")
+    st.session_state[SHARED_BASE_DF_KEY] = base_df.copy()
+    st.session_state[SHARED_PERF_DF_KEY] = perf_df.copy()
+    st.session_state[SHARED_METADATA_KEY] = dict(metadata)
 
 if base_df.empty:
     st.warning("A planilha não possui linhas de dados após a limpeza inicial.")
