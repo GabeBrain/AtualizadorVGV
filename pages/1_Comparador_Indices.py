@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+from io import BytesIO
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
 from src.theme import apply_brain_theme, render_sidebar_menu
 from src.vgv_core import clean_options as core_clean_options
 from src.vgv_core import find_column as core_find_column
+from src.vgv_core import source_token as core_source_token
+from src.vgv_parser import parse_vgv_workbook
 
-APP_NAME = "Comparador de \u00cdndices"
+APP_NAME = "Comparador de Índices"
 SHARED_SOURCE_TOKEN_KEY = "__shared_source_token"
 SHARED_SOURCE_NAME_KEY = "__shared_source_name"
 SHARED_BASE_DF_KEY = "__shared_base_df"
 SHARED_PERF_DF_KEY = "__shared_perf_df"
+SHARED_METADATA_KEY = "__shared_metadata"
 
 FILTER_EMP_KEY = "comparador_filter_empreendimentos"
 FILTER_CITY_KEY = "comparador_filter_cidades"
@@ -22,6 +28,16 @@ COMPARE_LAST_TOKEN_KEY = "__comparador_last_source_token"
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":balance_scale:")
 apply_brain_theme()
 render_sidebar_menu()
+
+
+@st.cache_data(show_spinner=False)
+def _parse_uploaded(file_bytes: bytes):
+    return parse_vgv_workbook(BytesIO(file_bytes))
+
+
+@st.cache_data(show_spinner=False)
+def _parse_sample(path_text: str):
+    return parse_vgv_workbook(path_text)
 
 
 def _find_column(columns: list[str], candidates: list[str]) -> str | None:
@@ -39,13 +55,49 @@ def _sanitize_filter_state(key: str, options: list[str]) -> None:
     st.session_state[key] = [value for value in current if value in options]
 
 
-st.title(APP_NAME)
-st.caption("Esta pagina consome o mesmo arquivo carregado no Atualizador de VGV.")
+def _rehydrate_shared_source_if_needed() -> tuple[str | None, str, pd.DataFrame | None, pd.DataFrame | None]:
+    shared_token = st.session_state.get(SHARED_SOURCE_TOKEN_KEY)
+    shared_source_name = st.session_state.get(SHARED_SOURCE_NAME_KEY) or "-"
+    shared_base_df = st.session_state.get(SHARED_BASE_DF_KEY)
+    shared_perf_df = st.session_state.get(SHARED_PERF_DF_KEY)
 
-shared_token = st.session_state.get(SHARED_SOURCE_TOKEN_KEY)
-shared_source_name = st.session_state.get(SHARED_SOURCE_NAME_KEY) or "-"
-shared_base_df = st.session_state.get(SHARED_BASE_DF_KEY)
-shared_perf_df = st.session_state.get(SHARED_PERF_DF_KEY)
+    if shared_token is not None and isinstance(shared_base_df, pd.DataFrame):
+        perf_df = shared_perf_df if isinstance(shared_perf_df, pd.DataFrame) else None
+        return shared_token, shared_source_name, shared_base_df, perf_df
+
+    sample_path = Path(__file__).resolve().parents[1] / "assets" / "tabelaEmpreendimentoReduzida.xlsx"
+    source_mode = st.session_state.get("source_mode")
+    source_name = st.session_state.get("source_name")
+    source_bytes = st.session_state.get("source_bytes")
+
+    source_token = core_source_token(source_mode, source_name, source_bytes, sample_path)
+    if source_token is None:
+        return None, "-", None, None
+
+    try:
+        if source_mode == "upload" and source_bytes:
+            base_df, perf_df, metadata = _parse_uploaded(source_bytes)
+        elif source_mode == "sample" and sample_path.exists():
+            base_df, perf_df, metadata = _parse_sample(str(sample_path))
+        else:
+            return None, "-", None, None
+    except Exception as exc:
+        st.error(f"Falha ao recuperar a fonte compartilhada: {exc}")
+        st.stop()
+
+    st.session_state[SHARED_SOURCE_TOKEN_KEY] = source_token
+    st.session_state[SHARED_SOURCE_NAME_KEY] = source_name or "-"
+    st.session_state[SHARED_BASE_DF_KEY] = base_df.copy()
+    st.session_state[SHARED_PERF_DF_KEY] = perf_df.copy()
+    st.session_state[SHARED_METADATA_KEY] = dict(metadata)
+
+    return source_token, (source_name or "-"), base_df, perf_df
+
+
+st.title(APP_NAME)
+st.caption("Esta pagina usa a mesma fonte da pagina Atualizador de VGV, com filtros independentes.")
+
+shared_token, shared_source_name, shared_base_df, shared_perf_df = _rehydrate_shared_source_if_needed()
 
 if shared_token is None or shared_base_df is None:
     st.warning("Nenhum arquivo ativo. Carregue a planilha na pagina Atualizador de VGV.")
@@ -59,6 +111,7 @@ if shared_perf_df is not None and not isinstance(shared_perf_df, pd.DataFrame):
     st.error("O dataset de performance compartilhado esta invalido. Recarregue a planilha na pagina principal.")
     st.stop()
 
+# Reset somente quando a fonte ativa muda. Navegar entre paginas preserva os filtros.
 if st.session_state.get(COMPARE_LAST_TOKEN_KEY) != shared_token:
     st.session_state[COMPARE_LAST_TOKEN_KEY] = shared_token
     st.session_state[FILTER_EMP_KEY] = []
