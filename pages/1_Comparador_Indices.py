@@ -13,7 +13,8 @@ from src.vgv_core import find_column as core_find_column
 from src.vgv_core import source_token as core_source_token
 from src.vgv_parser import parse_vgv_workbook
 
-APP_NAME = "Comparador de Índices"
+APP_NAME = "Comparador de Indices"
+WORKSPACE_VERSION = "V4.1"
 SHARED_SOURCE_TOKEN_KEY = "__shared_source_token"
 SHARED_SOURCE_NAME_KEY = "__shared_source_name"
 SHARED_BASE_DF_KEY = "__shared_base_df"
@@ -192,7 +193,7 @@ def _apply_filters(
 
 
 st.title(APP_NAME)
-st.caption("Painel V1 com filtro interativo + mapa reativo (estado independente desta pagina).")
+st.caption(f"Painel {WORKSPACE_VERSION} com filtro interativo + mapa reativo (estado independente desta pagina).")
 
 shared_token, shared_source_name, shared_base_df, shared_perf_df = _rehydrate_shared_source_if_needed()
 
@@ -266,6 +267,7 @@ selected_filters = {
 }
 
 component_payload = {
+    "componentVersion": WORKSPACE_VERSION,
     "summary": {
         "rows": int(len(base_enriched)),
         "empreendimentos": int(base_enriched[empreendimento_col].astype(str).nunique()),
@@ -327,7 +329,7 @@ filtered_df = _apply_filters(
 )
 
 st.success(f"Fonte compartilhada ativa: {shared_source_name}")
-st.caption(f"Registros apos filtros (workspace V1): {len(filtered_df)}")
+st.caption(f"Registros apos filtros (workspace {WORKSPACE_VERSION}): {len(filtered_df)}")
 
 st.subheader("Dataframe resultante dos filtros")
 st.dataframe(filtered_df, width="stretch", hide_index=True)

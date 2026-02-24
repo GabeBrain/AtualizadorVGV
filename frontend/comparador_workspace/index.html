@@ -393,9 +393,11 @@
       map: null,
       tileLayer: null,
       markerLayer: null,
-      tileHealthy: true,
-      mapMode: "leaflet",
-      latestRows: []
+      tileHealthy: false,
+      mapMode: "fallback",
+      latestRows: [],
+      tileTimeoutId: null,
+      tileLoadedOnce: false
     };
 
     function safeText(value) {
@@ -588,7 +590,7 @@
       if (filteredEmpEl) filteredEmpEl.textContent = formatInt(filteredEmp);
       if (badgeRows) badgeRows.textContent = `${formatInt(filteredRows.length)} linhas`;
       if (badgePoints) badgePoints.textContent = `${formatInt(mapPoints)} pontos`;
-      if (badgeMode) badgeMode.textContent = state.mapMode === "leaflet" ? "Leaflet/CARTO" : "Mapa local";
+      if (badgeMode) badgeMode.textContent = state.mapMode === "leaflet" ? "Leaflet/CARTO" : "Mapa local (V4.1)";
     }
 
     function setMapOverlayMessage(message) {
@@ -638,6 +640,11 @@
 
         state.tileLayer.on("load", () => {
           state.tileHealthy = true;
+          state.tileLoadedOnce = true;
+          if (state.tileTimeoutId) {
+            window.clearTimeout(state.tileTimeoutId);
+            state.tileTimeoutId = null;
+          }
           if (state.latestRows.length > 0 && state.mapMode !== "leaflet") {
             renderMap(state.latestRows);
           }
@@ -646,6 +653,18 @@
         state.tileLayer.addTo(state.map);
         state.markerLayer = window.L.layerGroup().addTo(state.map);
         state.map.setView([-14.235, -51.9253], 4);
+
+        if (state.tileTimeoutId) {
+          window.clearTimeout(state.tileTimeoutId);
+        }
+        state.tileTimeoutId = window.setTimeout(() => {
+          if (!state.tileLoadedOnce) {
+            state.tileHealthy = false;
+            if (state.latestRows.length > 0) {
+              renderMap(state.latestRows);
+            }
+          }
+        }, 2200);
       }
 
       window.setTimeout(() => {
@@ -789,7 +808,7 @@
         return;
       }
 
-      if (!state.tileHealthy) {
+      if (!state.tileLoadedOnce || !state.tileHealthy) {
         setMapMode("fallback");
         renderFallbackMap(points);
         setMapOverlayMessage("Camada base externa indisponivel; exibindo mapa local.");
@@ -876,11 +895,12 @@
     function renderWorkspace(payload) {
       state.payload = payload || {};
       state.filters = normalizeFilters(payload.selectedFilters || {}, payload.options || {});
+      const componentVersion = safeText(payload.componentVersion) || "V4.1";
 
       root.innerHTML = `
         <div class="workspace">
           <aside class="filters-panel">
-            <h3 class="panel-title">Painel VGV Interativo</h3>
+            <h3 class="panel-title">Painel VGV Interativo ${escapeHtml(componentVersion)}</h3>
             <p class="panel-subtitle">Filtros por chips com resposta imediata e estado independente nesta pagina.</p>
             <div class="summary">
               <div class="metric">
@@ -909,7 +929,7 @@
               <div id="map-empty" class="map-empty"></div>
             </div>
             <div class="footer">
-              Componente V4 | CARTO + fallback local. Clique em um ponto para focar o empreendimento.
+              Componente ${escapeHtml(componentVersion)} | CARTO + fallback local. Clique em um ponto para focar o empreendimento.
             </div>
           </section>
         </div>
