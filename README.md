@@ -5,8 +5,8 @@ Starter Streamlit para analise de arquivos Excel, com foco em:
 - analise temporal e espacial em pagina unica (nativa)
 - filtros, KPIs e series mensais
 - calculo e exportacao de reajuste INCC-DI
+- menu com duas paginas: Atualizador de VGV e Comparador de Indices
 - padrao visual Brain (tokens e CSS centralizados)
-- comparacao entre experiencia nativa e POC React
 
 ## Rodar localmente
 
@@ -22,15 +22,12 @@ streamlit run app.py
 ```text
 app.py
 pages/
-  5_React_POC.py
+  1_Comparador_Indices.py
 src/
   theme.py
   io_excel.py
   analytics.py
   vgv_core.py
-  react_component.py
-frontend/
-  react_workspace/index.html
 .streamlit/config.toml
 ```
 
