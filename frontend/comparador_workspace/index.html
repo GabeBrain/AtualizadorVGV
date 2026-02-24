@@ -379,6 +379,13 @@
       resizeTimer: null
     };
 
+    const BRAZIL_BOUNDS = {
+      minLat: -34.5,
+      maxLat: 5.8,
+      minLon: -74.5,
+      maxLon: -33.0
+    };
+
     function safeText(value) {
       if (value === null || value === undefined) return "";
       return String(value).trim();
@@ -466,7 +473,7 @@
       return count;
     }
 
-    function computeBounds(points) {
+    function computePlotBounds(points) {
       let minLat = Infinity;
       let maxLat = -Infinity;
       let minLon = Infinity;
@@ -483,28 +490,37 @@
       });
 
       if (!Number.isFinite(minLat) || !Number.isFinite(maxLat) || !Number.isFinite(minLon) || !Number.isFinite(maxLon)) {
-        return null;
+        return { ...BRAZIL_BOUNDS };
       }
 
-      if (minLat === maxLat) {
-        minLat -= 0.25;
-        maxLat += 0.25;
-      }
+      const rawLatSpan = maxLat - minLat;
+      const rawLonSpan = maxLon - minLon;
 
-      if (minLon === maxLon) {
-        minLon -= 0.25;
-        maxLon += 0.25;
-      }
+      const latPad = Math.max(rawLatSpan * 0.14, 0.35);
+      const lonPad = Math.max(rawLonSpan * 0.14, 0.35);
 
-      const latPad = Math.max((maxLat - minLat) * 0.08, 0.05);
-      const lonPad = Math.max((maxLon - minLon) * 0.08, 0.05);
+      minLat -= latPad;
+      maxLat += latPad;
+      minLon -= lonPad;
+      maxLon += lonPad;
 
+      // Mantem contexto geográfico estável do Brasil mesmo com poucos pontos.
       return {
-        minLat: minLat - latPad,
-        maxLat: maxLat + latPad,
-        minLon: minLon - lonPad,
-        maxLon: maxLon + lonPad
+        minLat: Math.min(minLat, BRAZIL_BOUNDS.minLat),
+        maxLat: Math.max(maxLat, BRAZIL_BOUNDS.maxLat),
+        minLon: Math.min(minLon, BRAZIL_BOUNDS.minLon),
+        maxLon: Math.max(maxLon, BRAZIL_BOUNDS.maxLon)
       };
+    }
+
+    function formatLat(lat) {
+      const n = Math.abs(lat).toFixed(0);
+      return lat >= 0 ? `${n}\u00b0N` : `${n}\u00b0S`;
+    }
+
+    function formatLon(lon) {
+      const n = Math.abs(lon).toFixed(0);
+      return `${n}\u00b0W`;
     }
 
     function projectPoint(lat, lon, bounds, width, height, pad) {
@@ -625,7 +641,7 @@
       const width = Math.max(640, rect.width || 640);
       const height = Math.max(520, rect.height || 520);
       const pad = 36;
-      const bounds = computeBounds(points);
+      const bounds = computePlotBounds(points);
 
       if (!bounds) {
         if (emptyEl) {
@@ -654,11 +670,14 @@
       svg.appendChild(bg);
 
       const gridGroup = svgEl("g", { opacity: "0.45" });
+      const labelGroup = svgEl("g");
       const steps = 6;
 
       for (let i = 0; i <= steps; i += 1) {
         const x = pad + ((width - pad * 2) / steps) * i;
         const y = pad + ((height - pad * 2) / steps) * i;
+        const lonVal = bounds.minLon + ((bounds.maxLon - bounds.minLon) / steps) * i;
+        const latVal = bounds.maxLat - ((bounds.maxLat - bounds.minLat) / steps) * i;
 
         gridGroup.appendChild(
           svgEl("line", {
@@ -681,9 +700,30 @@
             "stroke-width": 1
           })
         );
+
+        const lonLabel = svgEl("text", {
+          x,
+          y: height - pad + 16,
+          fill: "#4f5f42",
+          "font-size": 10,
+          "text-anchor": "middle"
+        });
+        lonLabel.textContent = formatLon(lonVal);
+        labelGroup.appendChild(lonLabel);
+
+        const latLabel = svgEl("text", {
+          x: pad - 8,
+          y: y + 3,
+          fill: "#4f5f42",
+          "font-size": 10,
+          "text-anchor": "end"
+        });
+        latLabel.textContent = formatLat(latVal);
+        labelGroup.appendChild(latLabel);
       }
 
       svg.appendChild(gridGroup);
+      svg.appendChild(labelGroup);
 
       svg.appendChild(
         svgEl("rect", {
@@ -792,6 +832,16 @@
       legend.appendChild(svgEl("text", { x: pad + 36, y: pad + 46, fill: "#31481d", "font-size": 11, "font-weight": 600 }));
       legend.lastChild.textContent = "Empreendimento em foco";
       svg.appendChild(legend);
+
+      const north = svgEl("text", {
+        x: width - pad - 16,
+        y: pad + 18,
+        fill: "#2f471b",
+        "font-size": 16,
+        "font-weight": 700
+      });
+      north.textContent = "N";
+      svg.appendChild(north);
     }
 
     function renderAll() {
