@@ -174,6 +174,23 @@ with st.expander("Fonte de dados", expanded=True):
             "filter_cidades",
             "filter_tipologias",
             "filter_status",
+            "__persist_filter_empreendimentos",
+            "__persist_filter_cidades",
+            "__persist_filter_tipologias",
+            "__persist_filter_status",
+            "__widget_filter_empreendimentos",
+            "__widget_filter_cidades",
+            "__widget_filter_tipologias",
+            "__widget_filter_status",
+            "__persist_comparador_filter_empreendimentos",
+            "__persist_comparador_filter_cidades",
+            "__persist_comparador_filter_tipologias",
+            "__persist_comparador_filter_status",
+            "__widget_comparador_filter_empreendimentos",
+            "__widget_comparador_filter_cidades",
+            "__widget_comparador_filter_tipologias",
+            "__widget_comparador_filter_status",
+            "__comparador_last_source_token",
             "__pending_map_filter",
         ):
             st.session_state.pop(key, None)
@@ -296,10 +313,10 @@ if not latest_record.empty and status_metric_col and status_metric_col in latest
     )
     base_enriched = base_enriched.merge(status_frame, on="__registro_id", how="left")
 
-FILTER_EMP_KEY = "filter_empreendimentos"
-FILTER_CITY_KEY = "filter_cidades"
-FILTER_TIPO_KEY = "filter_tipologias"
-FILTER_STATUS_KEY = "filter_status"
+FILTER_EMP_KEY = "__persist_filter_empreendimentos"
+FILTER_CITY_KEY = "__persist_filter_cidades"
+FILTER_TIPO_KEY = "__persist_filter_tipologias"
+FILTER_STATUS_KEY = "__persist_filter_status"
 FILTER_EMP_WIDGET_KEY = "__widget_filter_empreendimentos"
 FILTER_CITY_WIDGET_KEY = "__widget_filter_cidades"
 FILTER_TIPO_WIDGET_KEY = "__widget_filter_tipologias"
