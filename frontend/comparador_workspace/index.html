@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comparador Workspace V1</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
+  <style>
+    :root {
+      --brain-primary: #5b7537;
+      --brain-secondary: #587030;
+      --brain-highlight: #f8d000;
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --soft: #eef2e4;
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    .workspace {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(248, 208, 0, 0.16), transparent 38%),
+        radial-gradient(circle at 90% 90%, rgba(91, 117, 55, 0.18), transparent 34%),
+        linear-gradient(150deg, #fcfdf8 0%, var(--bg) 54%, #eef3e8 100%);
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 12px;
+      min-height: 680px;
+      overflow: hidden;
+      animation: reveal 260ms ease-out;
+    }
+
+    @keyframes reveal {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .filters-panel {
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.84);
+      backdrop-filter: blur(2px);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 100%;
+    }
+
+    .panel-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      margin: 0;
+    }
+
+    .panel-subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      background: var(--surface);
+    }
+
+    .metric-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      margin-bottom: 3px;
+    }
+
+    .metric-value {
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .search-input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 11px;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--brain-primary);
+      box-shadow: 0 0 0 2px rgba(91, 117, 55, 0.16);
+    }
+
+    .btn {
+      border: 1px solid var(--brain-primary);
+      border-radius: 10px;
+      padding: 8px 11px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--brain-primary);
+      color: #ffffff;
+      transition: all 120ms ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--brain-secondary);
+      border-color: var(--brain-secondary);
+    }
+
+    .groups {
+      display: grid;
+      gap: 8px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .group {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--surface);
+      padding: 8px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .group-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .group-count {
+      font-size: 12px;
+      color: var(--brain-primary);
+      font-weight: 700;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 98px;
+      overflow-y: auto;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #ffffff;
+      color: var(--text);
+      font-size: 12px;
+      padding: 4px 9px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+    }
+
+    .chip:hover {
+      border-color: var(--brain-primary);
+      transform: translateY(-1px);
+    }
+
+    .chip.active {
+      background: var(--soft);
+      border-color: #a8b998;
+      color: #1f3a10;
+      font-weight: 700;
+    }
+
+    .chip-count {
+      font-size: 10px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 5px;
+      background: #ffffff;
+    }
+
+    .chip.active .chip-count {
+      border-color: #c7d6b9;
+      color: #284417;
+      background: #f7fbf1;
+    }
+
+    .map-panel {
+      padding: 12px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      min-height: 100%;
+    }
+
+    .map-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .map-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .map-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      border: 1px solid #c6d2b8;
+      background: #f5f8ef;
+      color: #334c1d;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .map-shell {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+      position: relative;
+      min-height: 480px;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 480px;
+    }
+
+    .map-empty {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      font-size: 13px;
+      color: var(--muted);
+      background: linear-gradient(135deg, #f8faef 0%, #ffffff 100%);
+      z-index: 900;
+    }
+
+    .map-empty.visible {
+      display: flex;
+    }
+
+    .footer {
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px dashed var(--line);
+      padding-top: 7px;
+    }
+
+    @media (max-width: 980px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .filters-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const root = document.getElementById("root");
+
+    const FIELD_CONFIG = [
+      { field: "empreendimentos", rowKey: "empreendimento", label: "Empreendimento" },
+      { field: "cidades", rowKey: "cidade", label: "Cidade" },
+      { field: "tipologias", rowKey: "tipologia", label: "Tipologia" },
+      { field: "status", rowKey: "status", label: "Status atual" }
+    ];
+
+    const Bridge = {
+      MESSAGE_RENDER: "streamlit:render",
+      MESSAGE_COMPONENT_READY: "streamlit:componentReady",
+      MESSAGE_SET_FRAME_HEIGHT: "streamlit:setFrameHeight",
+      MESSAGE_SET_COMPONENT_VALUE: "streamlit:setComponentValue",
+      send(type, payload) {
+        window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, "*");
+      },
+      setComponentReady() {
+        this.send(this.MESSAGE_COMPONENT_READY, { apiVersion: 1 });
+      },
+      setFrameHeight(height) {
+        const resolved = height || document.documentElement.scrollHeight;
+        this.send(this.MESSAGE_SET_FRAME_HEIGHT, { height: resolved });
+      },
+      setComponentValue(value) {
+        this.send(this.MESSAGE_SET_COMPONENT_VALUE, { value });
+      }
+    };
+
+    const state = {
+      payload: {},
+      filters: {
+        empreendimentos: [],
+        cidades: [],
+        tipologias: [],
+        status: []
+      },
+      query: "",
+      map: null,
+      markersLayer: null,
+      firstMapFit: true
+    };
+
+    function safeText(value) {
+      if (value === null || value === undefined) return "";
+      return String(value).trim();
+    }
+
+    function parseNum(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function asArray(value) {
+      return Array.isArray(value) ? value : [];
+    }
+
+    function uniqueStrings(values) {
+      return [...new Set(asArray(values).map((v) => safeText(v)).filter(Boolean))];
+    }
+
+    function formatInt(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "-";
+      return n.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+    }
+
+    function escapeHtml(value) {
+      return safeText(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function normalizeFilters(rawFilters, options) {
+      const result = {};
+      for (const cfg of FIELD_CONFIG) {
+        const allowed = new Set(uniqueStrings(options[cfg.field]));
+        const incoming = uniqueStrings(rawFilters[cfg.field]);
+        result[cfg.field] = incoming.filter((item) => allowed.has(item));
+      }
+      return result;
+    }
+
+    function matchesRow(row, filters, query, excludeField) {
+      for (const cfg of FIELD_CONFIG) {
+        if (excludeField && cfg.field === excludeField) continue;
+        const selected = asArray(filters[cfg.field]);
+        if (selected.length > 0 && !selected.includes(safeText(row[cfg.rowKey]))) {
+          return false;
+        }
+      }
+
+      if (query) {
+        const haystack = [
+          row.empreendimento,
+          row.cidade,
+          row.tipologia,
+          row.status
+        ]
+          .map((v) => safeText(v).toLowerCase())
+          .join(" ");
+        if (!haystack.includes(query.toLowerCase())) return false;
+      }
+
+      return true;
+    }
+
+    function getFilteredRows() {
+      const rows = asArray(state.payload.rows);
+      return rows.filter((row) => matchesRow(row, state.filters, state.query, null));
+    }
+
+    function countByFieldOption(fieldCfg, optionValue) {
+      const rows = asArray(state.payload.rows);
+      let count = 0;
+      for (const row of rows) {
+        if (!matchesRow(row, state.filters, state.query, fieldCfg.field)) continue;
+        if (safeText(row[fieldCfg.rowKey]) === optionValue) count += 1;
+      }
+      return count;
+    }
+
+    function ensureMap() {
+      const mapNode = document.getElementById("map");
+      if (!mapNode) return false;
+
+      if (!window.L) {
+        return false;
+      }
+
+      if (!state.map) {
+        state.map = window.L.map(mapNode, {
+          zoomControl: true,
+          attributionControl: true,
+          preferCanvas: true
+        }).setView([-14.235, -51.9253], 4);
+
+        window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: "&copy; OpenStreetMap contributors"
+        }).addTo(state.map);
+
+        state.markersLayer = window.L.layerGroup().addTo(state.map);
+      }
+
+      return true;
+    }
+
+    function renderMap(rows) {
+      const emptyEl = document.getElementById("map-empty");
+      const hasLeaflet = ensureMap();
+      if (!hasLeaflet) {
+        if (emptyEl) {
+          emptyEl.classList.add("visible");
+          emptyEl.textContent = "Map library unavailable in this environment.";
+        }
+        return;
+      }
+
+      if (!state.markersLayer) return;
+      state.markersLayer.clearLayers();
+
+      const markers = [];
+      for (const row of rows) {
+        const lat = parseNum(row.lat);
+        const lon = parseNum(row.lon);
+        if (lat === null || lon === null) continue;
+
+        const selected = asArray(state.filters.empreendimentos).includes(safeText(row.empreendimento));
+        const marker = window.L.circleMarker([lat, lon], {
+          radius: selected ? 8 : 6,
+          weight: selected ? 2 : 1,
+          opacity: 0.95,
+          color: selected ? "#f8d000" : "#5b7537",
+          fillColor: selected ? "#f8d000" : "#587030",
+          fillOpacity: selected ? 0.82 : 0.66
+        });
+
+        marker.bindTooltip(
+          `<strong>${escapeHtml(row.empreendimento || "-")}</strong><br/>` +
+          `Cidade: ${escapeHtml(row.cidade || "-")}<br/>` +
+          `Tipologia: ${escapeHtml(row.tipologia || "-")}<br/>` +
+          `Status: ${escapeHtml(row.status || "-")}`,
+          { sticky: true }
+        );
+
+        marker.on("click", () => {
+          const emp = safeText(row.empreendimento);
+          if (!emp) return;
+          state.filters.empreendimentos = [emp];
+          emitFilters("marker_click");
+          renderAll();
+        });
+
+        marker.addTo(state.markersLayer);
+        markers.push(marker);
+      }
+
+      if (markers.length === 0) {
+        if (emptyEl) {
+          emptyEl.classList.add("visible");
+          emptyEl.textContent = "No map points for current filters.";
+        }
+      } else {
+        if (emptyEl) emptyEl.classList.remove("visible");
+        const bounds = window.L.featureGroup(markers).getBounds();
+        if (bounds.isValid()) {
+          state.map.fitBounds(bounds, {
+            padding: [22, 22],
+            maxZoom: 13,
+            animate: !state.firstMapFit
+          });
+          state.firstMapFit = false;
+        }
+      }
+    }
+
+    function emitFilters(reason) {
+      Bridge.setComponentValue({
+        action: "set_filters",
+        reason: reason || "ui_change",
+        filters: state.filters
+      });
+    }
+
+    function toggleFilter(field, value) {
+      const current = new Set(asArray(state.filters[field]));
+      if (current.has(value)) {
+        current.delete(value);
+      } else {
+        current.add(value);
+      }
+      state.filters[field] = [...current];
+      emitFilters("toggle_chip");
+      renderAll();
+    }
+
+    function clearAllFilters() {
+      for (const cfg of FIELD_CONFIG) {
+        state.filters[cfg.field] = [];
+      }
+      state.query = "";
+      emitFilters("clear_all");
+      renderAll();
+    }
+
+    function renderFilterGroups() {
+      const host = document.getElementById("groups");
+      if (!host) return;
+
+      const options = state.payload.options || {};
+      const htmlParts = [];
+
+      for (const cfg of FIELD_CONFIG) {
+        const optionList = uniqueStrings(options[cfg.field]).slice(0, 140);
+        const selectedSet = new Set(asArray(state.filters[cfg.field]));
+
+        const chips = optionList
+          .map((value) => {
+            const count = countByFieldOption(cfg, value);
+            const activeClass = selectedSet.has(value) ? "chip active" : "chip";
+            return (
+              `<button class="${activeClass}" data-field="${cfg.field}" data-value="${escapeHtml(value)}" title="${escapeHtml(value)}">` +
+              `${escapeHtml(value)} <span class="chip-count">${formatInt(count)}</span>` +
+              `</button>`
+            );
+          })
+          .join("");
+
+        htmlParts.push(
+          `<section class="group">` +
+          `<div class="group-header"><div class="group-title">${cfg.label}</div><div class="group-count">${formatInt(selectedSet.size)}</div></div>` +
+          `<div class="chips">${chips || "<span class='panel-subtitle'>No options</span>"}</div>` +
+          `</section>`
+        );
+      }
+
+      host.innerHTML = htmlParts.join("");
+
+      host.querySelectorAll("[data-field][data-value]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const field = el.getAttribute("data-field");
+          const value = el.getAttribute("data-value");
+          if (!field || !value) return;
+          toggleFilter(field, value);
+        });
+      });
+    }
+
+    function renderSummary(filteredRows) {
+      const totalRowsEl = document.getElementById("metric-total-rows");
+      const filteredRowsEl = document.getElementById("metric-filtered-rows");
+      const filteredEmpEl = document.getElementById("metric-filtered-emp");
+      const badgeRows = document.getElementById("badge-rows");
+      const badgePoints = document.getElementById("badge-points");
+
+      const allRows = asArray(state.payload.rows);
+      const filteredEmp = new Set(filteredRows.map((row) => safeText(row.empreendimento)).filter(Boolean)).size;
+      const mapPoints = filteredRows.filter((row) => parseNum(row.lat) !== null && parseNum(row.lon) !== null).length;
+
+      if (totalRowsEl) totalRowsEl.textContent = formatInt(allRows.length);
+      if (filteredRowsEl) filteredRowsEl.textContent = formatInt(filteredRows.length);
+      if (filteredEmpEl) filteredEmpEl.textContent = formatInt(filteredEmp);
+      if (badgeRows) badgeRows.textContent = `${formatInt(filteredRows.length)} rows`;
+      if (badgePoints) badgePoints.textContent = `${formatInt(mapPoints)} map points`;
+    }
+
+    function renderAll() {
+      renderFilterGroups();
+      const filteredRows = getFilteredRows();
+      renderSummary(filteredRows);
+      renderMap(filteredRows);
+      window.setTimeout(() => Bridge.setFrameHeight(), 0);
+    }
+
+    function renderWorkspace(payload) {
+      state.payload = payload || {};
+      state.filters = normalizeFilters(
+        payload.selectedFilters || {},
+        payload.options || {}
+      );
+
+      root.innerHTML = `
+        <div class="workspace">
+          <aside class="filters-panel">
+            <h3 class="panel-title">Comparador VGV Workspace</h3>
+            <p class="panel-subtitle">Interactive filter panel with independent state on this page.</p>
+            <div class="summary">
+              <div class="metric">
+                <div class="metric-label">Rows (base)</div>
+                <div id="metric-total-rows" class="metric-value">-</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Rows (filtered)</div>
+                <div id="metric-filtered-rows" class="metric-value">-</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Empreend.</div>
+                <div id="metric-filtered-emp" class="metric-value">-</div>
+              </div>
+            </div>
+            <div class="search-row">
+              <input id="filter-search" class="search-input" type="text" placeholder="Search empreendimento, cidade, tipologia..." />
+              <button id="clear-filters" class="btn" type="button">Clear all</button>
+            </div>
+            <div id="groups" class="groups"></div>
+          </aside>
+          <section class="map-panel">
+            <div class="map-header">
+              <h3 class="map-title">Mapa reativo</h3>
+              <div class="map-badges">
+                <span id="badge-rows" class="badge">-</span>
+                <span id="badge-points" class="badge">-</span>
+              </div>
+            </div>
+            <div class="map-shell">
+              <div id="map"></div>
+              <div id="map-empty" class="map-empty"></div>
+            </div>
+            <div class="footer">
+              Open-source map stack: Leaflet + OpenStreetMap. Click marker to focus on one empreendimento.
+            </div>
+          </section>
+        </div>
+      `;
+
+      const searchInput = document.getElementById("filter-search");
+      const clearBtn = document.getElementById("clear-filters");
+
+      if (searchInput) {
+        searchInput.value = state.query || "";
+        searchInput.addEventListener("input", (event) => {
+          state.query = safeText(event.target.value);
+          renderAll();
+        });
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+          clearAllFilters();
+        });
+      }
+
+      renderAll();
+    }
+
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== Bridge.MESSAGE_RENDER) return;
+      const payload = (data.args && data.args.payload) || {};
+      renderWorkspace(payload);
+    });
+
+    Bridge.setComponentReady();
+    Bridge.setFrameHeight(760);
+  </script>
+</body>
+</html>
