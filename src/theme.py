@@ -5,11 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 _NAV_ITEMS: list[tuple[str, str]] = [
-    ("app.py", "Visao Geral (Nativa)"),
-    ("pages/1_Upload.py", "Upload"),
-    ("pages/2_Analises.py", "Analises"),
-    ("pages/3_Qualidade.py", "Qualidade"),
-    ("pages/4_Reajuste_INCC.py", "Reajuste INCC"),
+    ("app.py", "Análise Temporal"),
     ("pages/5_React_POC.py", "React POC"),
 ]
 
@@ -127,11 +123,10 @@ def render_sidebar_menu() -> None:
     with st.sidebar:
         if logo_path:
             try:
-                st.logo(logo_path, size="small")
+                st.logo(logo_path, size="large")
             except Exception:
-                st.image(logo_path, width=56)
+                st.image(logo_path, width=112)
 
-        st.markdown("### Navegacao")
         sidebar_page_link = getattr(st.sidebar, "page_link", None)
         if callable(sidebar_page_link):
             for page_path, label in _NAV_ITEMS:
