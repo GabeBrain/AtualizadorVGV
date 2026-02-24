@@ -4,15 +4,40 @@ import pandas as pd
 import streamlit as st
 
 from src.theme import apply_brain_theme, render_sidebar_menu
+from src.vgv_core import clean_options as core_clean_options
+from src.vgv_core import find_column as core_find_column
 
-APP_NAME = "Comparador de Índices"
+APP_NAME = "Comparador de \u00cdndices"
 SHARED_SOURCE_TOKEN_KEY = "__shared_source_token"
 SHARED_SOURCE_NAME_KEY = "__shared_source_name"
 SHARED_BASE_DF_KEY = "__shared_base_df"
+SHARED_PERF_DF_KEY = "__shared_perf_df"
+
+FILTER_EMP_KEY = "comparador_filter_empreendimentos"
+FILTER_CITY_KEY = "comparador_filter_cidades"
+FILTER_TIPO_KEY = "comparador_filter_tipologias"
+FILTER_STATUS_KEY = "comparador_filter_status"
+COMPARE_LAST_TOKEN_KEY = "__comparador_last_source_token"
 
 st.set_page_config(page_title=APP_NAME, layout="wide", page_icon=":balance_scale:")
 apply_brain_theme()
 render_sidebar_menu()
+
+
+def _find_column(columns: list[str], candidates: list[str]) -> str | None:
+    return core_find_column(columns, candidates)
+
+
+def _options_for_column(df: pd.DataFrame, column: str | None) -> list[str]:
+    if not column or column not in df.columns:
+        return []
+    return core_clean_options(df[column])
+
+
+def _sanitize_filter_state(key: str, options: list[str]) -> None:
+    current = st.session_state.get(key, []) or []
+    st.session_state[key] = [value for value in current if value in options]
+
 
 st.title(APP_NAME)
 st.caption("Esta pagina consome o mesmo arquivo carregado no Atualizador de VGV.")
@@ -20,6 +45,7 @@ st.caption("Esta pagina consome o mesmo arquivo carregado no Atualizador de VGV.
 shared_token = st.session_state.get(SHARED_SOURCE_TOKEN_KEY)
 shared_source_name = st.session_state.get(SHARED_SOURCE_NAME_KEY) or "-"
 shared_base_df = st.session_state.get(SHARED_BASE_DF_KEY)
+shared_perf_df = st.session_state.get(SHARED_PERF_DF_KEY)
 
 if shared_token is None or shared_base_df is None:
     st.warning("Nenhum arquivo ativo. Carregue a planilha na pagina Atualizador de VGV.")
@@ -29,6 +55,87 @@ if not isinstance(shared_base_df, pd.DataFrame):
     st.error("O dataset compartilhado esta invalido. Recarregue a planilha na pagina principal.")
     st.stop()
 
+if shared_perf_df is not None and not isinstance(shared_perf_df, pd.DataFrame):
+    st.error("O dataset de performance compartilhado esta invalido. Recarregue a planilha na pagina principal.")
+    st.stop()
+
+if st.session_state.get(COMPARE_LAST_TOKEN_KEY) != shared_token:
+    st.session_state[COMPARE_LAST_TOKEN_KEY] = shared_token
+    st.session_state[FILTER_EMP_KEY] = []
+    st.session_state[FILTER_CITY_KEY] = []
+    st.session_state[FILTER_TIPO_KEY] = []
+    st.session_state[FILTER_STATUS_KEY] = []
+
+base_enriched = shared_base_df.copy()
+
+status_metric_col = None
+if isinstance(shared_perf_df, pd.DataFrame) and not shared_perf_df.empty:
+    status_metric_col = _find_column(list(shared_perf_df.columns), ["Status"])
+
+    if status_metric_col and "__registro_id" in shared_perf_df.columns and "__registro_id" in base_enriched.columns:
+        latest_record = shared_perf_df.copy()
+        if "MesData" in latest_record.columns:
+            ordered = latest_record.dropna(subset=["MesData"]).sort_values("MesData")
+            if not ordered.empty:
+                latest_record = ordered
+
+        latest_record = latest_record.groupby("__registro_id", as_index=False).tail(1)
+        status_frame = latest_record[["__registro_id", status_metric_col]].rename(
+            columns={status_metric_col: "Status Atual"}
+        )
+        base_enriched = base_enriched.merge(status_frame, on="__registro_id", how="left")
+
+empreendimento_col = _find_column(list(base_enriched.columns), ["Empreendimento"])
+cidade_col = _find_column(list(base_enriched.columns), ["Cidade"])
+tipologia_col = _find_column(list(base_enriched.columns), ["Tipologia"])
+status_col = "Status Atual" if "Status Atual" in base_enriched.columns else None
+
+if not empreendimento_col:
+    st.error("A coluna 'Empreendimento' e obrigatoria para o comparador.")
+    st.stop()
+
+for key in (FILTER_EMP_KEY, FILTER_CITY_KEY, FILTER_TIPO_KEY, FILTER_STATUS_KEY):
+    st.session_state.setdefault(key, [])
+
+emp_options = _options_for_column(base_enriched, empreendimento_col)
+city_options = _options_for_column(base_enriched, cidade_col)
+tipo_options = _options_for_column(base_enriched, tipologia_col)
+status_options = _options_for_column(base_enriched, status_col)
+
+_sanitize_filter_state(FILTER_EMP_KEY, emp_options)
+_sanitize_filter_state(FILTER_CITY_KEY, city_options)
+_sanitize_filter_state(FILTER_TIPO_KEY, tipo_options)
+_sanitize_filter_state(FILTER_STATUS_KEY, status_options)
+
 st.success(f"Fonte compartilhada ativa: {shared_source_name}")
-st.subheader("Preview do dataframe resultante (head 5)")
-st.dataframe(shared_base_df.head(5), width="stretch", hide_index=True)
+st.subheader("Filtros")
+
+f1, f2, f3, f4 = st.columns(4)
+with f1:
+    st.multiselect("Empreendimento", options=emp_options, key=FILTER_EMP_KEY)
+with f2:
+    st.multiselect("Cidade", options=city_options, key=FILTER_CITY_KEY, disabled=not city_options)
+with f3:
+    st.multiselect("Tipologia", options=tipo_options, key=FILTER_TIPO_KEY, disabled=not tipo_options)
+with f4:
+    st.multiselect("Status Atual", options=status_options, key=FILTER_STATUS_KEY, disabled=not status_options)
+
+filtered_df = base_enriched.copy()
+
+selected_emp = st.session_state[FILTER_EMP_KEY]
+selected_city = st.session_state[FILTER_CITY_KEY]
+selected_tipo = st.session_state[FILTER_TIPO_KEY]
+selected_status = st.session_state[FILTER_STATUS_KEY]
+
+if selected_emp:
+    filtered_df = filtered_df[filtered_df[empreendimento_col].astype(str).isin(selected_emp)]
+if cidade_col and selected_city:
+    filtered_df = filtered_df[filtered_df[cidade_col].astype(str).isin(selected_city)]
+if tipologia_col and selected_tipo:
+    filtered_df = filtered_df[filtered_df[tipologia_col].astype(str).isin(selected_tipo)]
+if status_col and selected_status:
+    filtered_df = filtered_df[filtered_df[status_col].astype(str).isin(selected_status)]
+
+st.caption(f"Registros apos filtros: {len(filtered_df)}")
+st.subheader("Dataframe resultante dos filtros")
+st.dataframe(filtered_df, width="stretch", hide_index=True)
