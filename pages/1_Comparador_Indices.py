@@ -192,7 +192,7 @@ def _apply_filters(
 
 
 st.title(APP_NAME)
-st.caption("Workspace V1 com filtro interativo + mapa reativo (estado independente desta pagina).")
+st.caption("Painel V1 com filtro interativo + mapa reativo (estado independente desta pagina).")
 
 shared_token, shared_source_name, shared_base_df, shared_perf_df = _rehydrate_shared_source_if_needed()
 
