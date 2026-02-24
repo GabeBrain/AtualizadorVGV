@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Painel VGV Interativo</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
+  />
   <style>
     :root {
       --brain-primary: #5b7537;
@@ -190,7 +195,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      max-height: 190px;
+      max-height: 220px;
       overflow-y: auto;
       padding-right: 2px;
     }
@@ -278,17 +283,17 @@
       border: 1px solid var(--line);
       border-radius: 12px;
       overflow: hidden;
-      background: linear-gradient(180deg, #f3f8ec 0%, #eaf2e2 100%);
+      background: linear-gradient(180deg, #f6fbf2 0%, #eef4ea 100%);
       position: relative;
       min-height: 560px;
     }
 
-    #geo-svg {
+    #leaflet-map {
       width: 100%;
       height: 100%;
       min-height: 560px;
       display: block;
-      background: linear-gradient(180deg, #f6fbf2 0%, #eef4ea 100%);
+      background: linear-gradient(180deg, #f7fbef 0%, #eef4e7 100%);
     }
 
     .map-empty {
@@ -302,7 +307,8 @@
       font-size: 13px;
       color: var(--muted);
       background: linear-gradient(135deg, #f8faef 0%, #ffffff 100%);
-      z-index: 40;
+      z-index: 500;
+      pointer-events: none;
     }
 
     .map-empty.visible {
@@ -327,7 +333,7 @@
       }
 
       .map-shell,
-      #geo-svg {
+      #leaflet-map {
         min-height: 420px;
       }
     }
@@ -335,9 +341,8 @@
 </head>
 <body>
   <div id="root"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
-    const NS = "http://www.w3.org/2000/svg";
-
     const FIELD_CONFIG = [
       { field: "empreendimentos", rowKey: "empreendimento", label: "Empreendimento" },
       { field: "cidades", rowKey: "cidade", label: "Cidade" },
@@ -366,6 +371,7 @@
     };
 
     const root = document.getElementById("root");
+
     const state = {
       payload: {},
       filters: {
@@ -376,14 +382,12 @@
       },
       query: "",
       resizeBound: false,
-      resizeTimer: null
-    };
-
-    const BRAZIL_BOUNDS = {
-      minLat: -34.5,
-      maxLat: 5.8,
-      minLon: -74.5,
-      maxLon: -33.0
+      resizeTimer: null,
+      map: null,
+      tileLayer: null,
+      markerLayer: null,
+      tileHealthy: true,
+      viewInitialized: false
     };
 
     function safeText(value) {
@@ -417,16 +421,6 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
-    }
-
-    function svgEl(name, attrs = {}) {
-      const el = document.createElementNS(NS, name);
-      Object.entries(attrs).forEach(([key, value]) => {
-        if (value !== null && value !== undefined) {
-          el.setAttribute(key, String(value));
-        }
-      });
-      return el;
     }
 
     function normalizeFilters(rawFilters, options) {
@@ -471,62 +465,6 @@
         if (safeText(row[fieldCfg.rowKey]) === optionValue) count += 1;
       }
       return count;
-    }
-
-    function computePlotBounds(points) {
-      let minLat = Infinity;
-      let maxLat = -Infinity;
-      let minLon = Infinity;
-      let maxLon = -Infinity;
-
-      points.forEach((point) => {
-        const lat = parseNum(point.lat);
-        const lon = parseNum(point.lon);
-        if (lat === null || lon === null) return;
-        if (lat < minLat) minLat = lat;
-        if (lat > maxLat) maxLat = lat;
-        if (lon < minLon) minLon = lon;
-        if (lon > maxLon) maxLon = lon;
-      });
-
-      if (!Number.isFinite(minLat) || !Number.isFinite(maxLat) || !Number.isFinite(minLon) || !Number.isFinite(maxLon)) {
-        return { ...BRAZIL_BOUNDS };
-      }
-
-      const rawLatSpan = maxLat - minLat;
-      const rawLonSpan = maxLon - minLon;
-
-      const latPad = Math.max(rawLatSpan * 0.14, 0.35);
-      const lonPad = Math.max(rawLonSpan * 0.14, 0.35);
-
-      minLat -= latPad;
-      maxLat += latPad;
-      minLon -= lonPad;
-      maxLon += lonPad;
-
-      // Mantem contexto geográfico estável do Brasil mesmo com poucos pontos.
-      return {
-        minLat: Math.min(minLat, BRAZIL_BOUNDS.minLat),
-        maxLat: Math.max(maxLat, BRAZIL_BOUNDS.maxLat),
-        minLon: Math.min(minLon, BRAZIL_BOUNDS.minLon),
-        maxLon: Math.max(maxLon, BRAZIL_BOUNDS.maxLon)
-      };
-    }
-
-    function formatLat(lat) {
-      const n = Math.abs(lat).toFixed(0);
-      return lat >= 0 ? `${n}\u00b0N` : `${n}\u00b0S`;
-    }
-
-    function formatLon(lon) {
-      const n = Math.abs(lon).toFixed(0);
-      return `${n}\u00b0W`;
-    }
-
-    function projectPoint(lat, lon, bounds, width, height, pad) {
-      const x = pad + ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * (width - pad * 2);
-      const y = height - pad - ((lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * (height - pad * 2);
-      return { x, y };
     }
 
     function emitFilters(reason) {
@@ -616,191 +554,108 @@
       if (badgePoints) badgePoints.textContent = `${formatInt(mapPoints)} pontos`;
     }
 
-    function renderGeoPlot(filteredRows) {
-      const svg = document.getElementById("geo-svg");
+    function setMapOverlayMessage(message) {
       const emptyEl = document.getElementById("map-empty");
-      if (!svg) return;
+      if (!emptyEl) return;
+      if (!message) {
+        emptyEl.classList.remove("visible");
+        emptyEl.textContent = "";
+        return;
+      }
+      emptyEl.textContent = message;
+      emptyEl.classList.add("visible");
+    }
+
+    function ensureLeafletMap() {
+      if (!window.L) {
+        setMapOverlayMessage("Nao foi possivel carregar a biblioteca de mapa (Leaflet).");
+        return false;
+      }
+
+      const mapNode = document.getElementById("leaflet-map");
+      if (!mapNode) {
+        return false;
+      }
+
+      if (!state.map) {
+        state.map = window.L.map(mapNode, {
+          zoomControl: true,
+          attributionControl: true,
+          preferCanvas: true
+        });
+
+        state.tileLayer = window.L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+          {
+            subdomains: "abcd",
+            maxZoom: 19,
+            attribution: "&copy; OpenStreetMap &copy; CARTO"
+          }
+        );
+
+        state.tileLayer.on("tileerror", () => {
+          state.tileHealthy = false;
+        });
+
+        state.tileLayer.on("load", () => {
+          state.tileHealthy = true;
+        });
+
+        state.tileLayer.addTo(state.map);
+        state.markerLayer = window.L.layerGroup().addTo(state.map);
+
+        state.map.setView([-14.235, -51.9253], 4);
+      }
+
+      window.setTimeout(() => {
+        if (state.map) {
+          state.map.invalidateSize();
+        }
+      }, 0);
+
+      return true;
+    }
+
+    function renderLeafletMap(filteredRows) {
+      const hasMap = ensureLeafletMap();
+      if (!hasMap || !state.map || !state.markerLayer) {
+        return;
+      }
+
+      state.markerLayer.clearLayers();
 
       const points = filteredRows
         .map((row) => ({ ...row, lat: parseNum(row.lat), lon: parseNum(row.lon) }))
         .filter((row) => row.lat !== null && row.lon !== null);
 
-      svg.innerHTML = "";
-
       if (points.length === 0) {
-        if (emptyEl) {
-          emptyEl.classList.add("visible");
-          emptyEl.textContent = "Sem coordenadas validas para os filtros atuais.";
-        }
+        setMapOverlayMessage("Sem coordenadas validas para os filtros atuais.");
         return;
-      }
-
-      if (emptyEl) emptyEl.classList.remove("visible");
-
-      const rect = svg.getBoundingClientRect();
-      const width = Math.max(640, rect.width || 640);
-      const height = Math.max(520, rect.height || 520);
-      const pad = 36;
-      const bounds = computePlotBounds(points);
-
-      if (!bounds) {
-        if (emptyEl) {
-          emptyEl.classList.add("visible");
-          emptyEl.textContent = "Nao foi possivel projetar os pontos geograficos.";
-        }
-        return;
-      }
-
-      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-
-      const bg = svgEl("rect", {
-        x: 0,
-        y: 0,
-        width,
-        height,
-        fill: "url(#bgfade)"
-      });
-
-      const defs = svgEl("defs");
-      const gradient = svgEl("linearGradient", { id: "bgfade", x1: "0", y1: "0", x2: "0", y2: "1" });
-      gradient.appendChild(svgEl("stop", { offset: "0%", "stop-color": "#f7faef" }));
-      gradient.appendChild(svgEl("stop", { offset: "100%", "stop-color": "#eef3e8" }));
-      defs.appendChild(gradient);
-      svg.appendChild(defs);
-      svg.appendChild(bg);
-
-      const gridGroup = svgEl("g", { opacity: "0.45" });
-      const labelGroup = svgEl("g");
-      const steps = 6;
-
-      for (let i = 0; i <= steps; i += 1) {
-        const x = pad + ((width - pad * 2) / steps) * i;
-        const y = pad + ((height - pad * 2) / steps) * i;
-        const lonVal = bounds.minLon + ((bounds.maxLon - bounds.minLon) / steps) * i;
-        const latVal = bounds.maxLat - ((bounds.maxLat - bounds.minLat) / steps) * i;
-
-        gridGroup.appendChild(
-          svgEl("line", {
-            x1: x,
-            y1: pad,
-            x2: x,
-            y2: height - pad,
-            stroke: "#d6e0cf",
-            "stroke-width": 1
-          })
-        );
-
-        gridGroup.appendChild(
-          svgEl("line", {
-            x1: pad,
-            y1: y,
-            x2: width - pad,
-            y2: y,
-            stroke: "#d6e0cf",
-            "stroke-width": 1
-          })
-        );
-
-        const lonLabel = svgEl("text", {
-          x,
-          y: height - pad + 16,
-          fill: "#4f5f42",
-          "font-size": 10,
-          "text-anchor": "middle"
-        });
-        lonLabel.textContent = formatLon(lonVal);
-        labelGroup.appendChild(lonLabel);
-
-        const latLabel = svgEl("text", {
-          x: pad - 8,
-          y: y + 3,
-          fill: "#4f5f42",
-          "font-size": 10,
-          "text-anchor": "end"
-        });
-        latLabel.textContent = formatLat(latVal);
-        labelGroup.appendChild(latLabel);
-      }
-
-      svg.appendChild(gridGroup);
-      svg.appendChild(labelGroup);
-
-      svg.appendChild(
-        svgEl("rect", {
-          x: pad,
-          y: pad,
-          width: width - pad * 2,
-          height: height - pad * 2,
-          fill: "none",
-          stroke: "#b7c6aa",
-          "stroke-width": 1.2,
-          rx: 8
-        })
-      );
-
-      // Silhueta aproximada do Brasil para dar contexto visual ao geoplote.
-      const brazilOutline = [
-        [-73.9, -33.8],
-        [-70.8, -12.4],
-        [-62.2, 4.4],
-        [-50.5, 4.9],
-        [-34.9, -7.8],
-        [-38.8, -13.8],
-        [-43.8, -22.4],
-        [-49.4, -29.7],
-        [-55.1, -31.2],
-        [-58.6, -27.8],
-        [-62.6, -20.5],
-        [-66.8, -9.9],
-        [-73.9, -33.8]
-      ];
-
-      const projectedOutline = brazilOutline
-        .map(([lon, lat]) => projectPoint(lat, lon, bounds, width, height, pad))
-        .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
-        .join(" ");
-
-      if (projectedOutline) {
-        svg.appendChild(
-          svgEl("path", {
-            d: `${projectedOutline} Z`,
-            fill: "#dfe9d2",
-            stroke: "#a9bc97",
-            "stroke-width": 1.4,
-            opacity: 0.58
-          })
-        );
       }
 
       const selectedEmp = new Set(asArray(state.filters.empreendimentos));
-      const pointGroup = svgEl("g");
+      const latlngs = [];
 
       points.forEach((row) => {
-        const pos = projectPoint(row.lat, row.lon, bounds, width, height, pad);
         const isSelected = selectedEmp.size > 0 && selectedEmp.has(safeText(row.empreendimento));
 
-        const circle = svgEl("circle", {
-          cx: pos.x,
-          cy: pos.y,
-          r: isSelected ? 7.2 : 5.5,
-          fill: isSelected ? "#f8d000" : "#587030",
-          stroke: isSelected ? "#5b7537" : "#ffffff",
-          "stroke-width": isSelected ? 2 : 1.3,
-          opacity: isSelected ? 0.95 : 0.86,
-          cursor: "pointer"
+        const marker = window.L.circleMarker([row.lat, row.lon], {
+          radius: isSelected ? 8 : 6,
+          color: isSelected ? "#5b7537" : "#ffffff",
+          weight: isSelected ? 2 : 1.2,
+          fillColor: isSelected ? "#f8d000" : "#587030",
+          fillOpacity: isSelected ? 0.92 : 0.82
         });
 
-        circle.appendChild(
-          svgEl("title", {
-            })
+        marker.bindTooltip(
+          `<b>${escapeHtml(row.empreendimento || "-")}</b><br/>` +
+          `Cidade: ${escapeHtml(row.cidade || "-")}<br/>` +
+          `Tipologia: ${escapeHtml(row.tipologia || "-")}<br/>` +
+          `Status: ${escapeHtml(row.status || "-")}`,
+          { direction: "top", sticky: true }
         );
-        circle.firstChild.textContent =
-          `${safeText(row.empreendimento) || "-"}\n` +
-          `Cidade: ${safeText(row.cidade) || "-"}\n` +
-          `Tipologia: ${safeText(row.tipologia) || "-"}\n` +
-          `Status: ${safeText(row.status) || "-"}`;
 
-        circle.addEventListener("click", () => {
+        marker.on("click", () => {
           const emp = safeText(row.empreendimento);
           if (!emp) return;
           state.filters.empreendimentos = [emp];
@@ -808,47 +663,31 @@
           renderAll();
         });
 
-        pointGroup.appendChild(circle);
+        marker.addTo(state.markerLayer);
+        latlngs.push([row.lat, row.lon]);
       });
 
-      svg.appendChild(pointGroup);
+      if (latlngs.length > 0) {
+        const bounds = window.L.latLngBounds(latlngs);
+        state.map.fitBounds(bounds, {
+          padding: [26, 26],
+          maxZoom: 12,
+          animate: false
+        });
+      }
 
-      const legend = svgEl("g");
-      legend.appendChild(
-        svgEl("rect", {
-          x: pad + 8,
-          y: pad + 8,
-          width: 182,
-          height: 44,
-          rx: 8,
-          fill: "#ffffffd9",
-          stroke: "#d4ddcc"
-        })
-      );
-      legend.appendChild(svgEl("circle", { cx: pad + 24, cy: pad + 24, r: 5.3, fill: "#587030", stroke: "#fff", "stroke-width": 1.2 }));
-      legend.appendChild(svgEl("text", { x: pad + 36, y: pad + 28, fill: "#31481d", "font-size": 11, "font-weight": 600 }));
-      legend.lastChild.textContent = "Ponto filtrado";
-      legend.appendChild(svgEl("circle", { cx: pad + 24, cy: pad + 42, r: 6.5, fill: "#f8d000", stroke: "#5b7537", "stroke-width": 1.6 }));
-      legend.appendChild(svgEl("text", { x: pad + 36, y: pad + 46, fill: "#31481d", "font-size": 11, "font-weight": 600 }));
-      legend.lastChild.textContent = "Empreendimento em foco";
-      svg.appendChild(legend);
-
-      const north = svgEl("text", {
-        x: width - pad - 16,
-        y: pad + 18,
-        fill: "#2f471b",
-        "font-size": 16,
-        "font-weight": 700
-      });
-      north.textContent = "N";
-      svg.appendChild(north);
+      if (!state.tileHealthy) {
+        setMapOverlayMessage("Camada base indisponivel agora; exibindo pontos sem tile.");
+      } else {
+        setMapOverlayMessage("");
+      }
     }
 
     function renderAll() {
       renderFilterGroups();
       const filteredRows = getFilteredRows();
       renderSummary(filteredRows);
-      renderGeoPlot(filteredRows);
+      renderLeafletMap(filteredRows);
       window.setTimeout(() => Bridge.setFrameHeight(), 0);
     }
 
@@ -861,6 +700,9 @@
           window.clearTimeout(state.resizeTimer);
         }
         state.resizeTimer = window.setTimeout(() => {
+          if (state.map) {
+            state.map.invalidateSize();
+          }
           renderAll();
         }, 120);
       });
@@ -874,7 +716,7 @@
         <div class="workspace">
           <aside class="filters-panel">
             <h3 class="panel-title">Painel VGV Interativo</h3>
-            <p class="panel-subtitle">Painel de filtros interativo com estado independente nesta pagina.</p>
+            <p class="panel-subtitle">Filtros por chips com resposta imediata e estado independente nesta pagina.</p>
             <div class="summary">
               <div class="metric">
                 <div class="metric-label">Empreendimentos filtrados</div>
@@ -896,11 +738,11 @@
               </div>
             </div>
             <div class="map-shell">
-              <svg id="geo-svg" preserveAspectRatio="xMidYMid meet"></svg>
+              <div id="leaflet-map"></div>
               <div id="map-empty" class="map-empty"></div>
             </div>
             <div class="footer">
-              Clique em um ponto para focar o empreendimento. Visual geoespacial desenhado localmente no componente.
+              Base CARTO Light. Clique em um ponto para focar o empreendimento.
             </div>
           </section>
         </div>
