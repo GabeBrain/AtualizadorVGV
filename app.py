@@ -30,6 +30,13 @@ from src.vgv_parser import extract_present_amenities, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
 REAJUSTE_BASE_DATE = pd.Timestamp("2025-12-01")
+REAJUSTE_INDEX_ORDER = ("INCC-DI", "IPCA", "IGP-DI")
+REAJUSTE_INDEX_FILE_MAP = {
+    "INCC-DI": ("INCC_Series_MeDI.xlsx", "INCC-DI"),
+    "IPCA": ("343b-serie-historica-ipca-ibge.xlsx", "Plan1"),
+    "IGP-DI": ("8dec-serie-historica-igp-di-fgv.xlsx", "Plan1"),
+}
+REAJUSTE_INDEX_WIDGET_KEY = "__widget_reajuste_indices"
 SHARED_SOURCE_TOKEN_KEY = "__shared_source_token"
 SHARED_SOURCE_NAME_KEY = "__shared_source_name"
 SHARED_BASE_DF_KEY = "__shared_base_df"
@@ -123,6 +130,7 @@ def _build_reajuste_dataset(
     incc_path_text: str,
     target_months: tuple[str, ...] | None,
     base_date_text: str,
+    extra_index_sources: tuple[tuple[str, str, str], ...] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     return core_build_reajuste_dataset(
         perf_source=perf_source,
@@ -130,6 +138,7 @@ def _build_reajuste_dataset(
         target_months=target_months,
         base_date_text=base_date_text,
         fallback_base_date=REAJUSTE_BASE_DATE,
+        extra_index_sources=extra_index_sources,
     )
 
 
@@ -192,6 +201,7 @@ with st.expander("Fonte de dados", expanded=True):
             "__widget_comparador_filter_status",
             "__comparador_last_source_token",
             "__pending_map_filter",
+            REAJUSTE_INDEX_WIDGET_KEY,
         ):
             st.session_state.pop(key, None)
 
@@ -274,31 +284,43 @@ preco_lanc_col = _find_column(list(perf_df.columns), ["Preco de Lancamento", "Pr
 reajuste_perf = pd.DataFrame()
 reajuste_meta: dict[str, Any] = {}
 reajuste_error: str | None = None
-incc_series_path = Path(__file__).resolve().parent / "assets" / "INCC_Series_MeDI.xlsx"
+assets_dir = Path(__file__).resolve().parent / "assets"
+incc_series_path = assets_dir / REAJUSTE_INDEX_FILE_MAP["INCC-DI"][0]
+extra_index_sources: tuple[tuple[str, str, str], ...] = tuple(
+    (index_name, str(assets_dir / file_name), sheet_name)
+    for index_name in REAJUSTE_INDEX_ORDER
+    if index_name != "INCC-DI"
+    for file_name, sheet_name in [REAJUSTE_INDEX_FILE_MAP[index_name]]
+)
 
 reajuste_target_months: tuple[str, ...] | None = tuple(month_labels) if month_labels else None
 
-if incc_series_path.exists():
-    try:
-        if is_new_source:
-            with _spinner_with_timer("Calculando reajuste INCC..."):
-                reajuste_perf, reajuste_meta = _build_reajuste_dataset(
-                    perf_df,
-                    str(incc_series_path),
-                    reajuste_target_months,
-                    REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
-                )
-        else:
+try:
+    if is_new_source:
+        with _spinner_with_timer("Calculando reajuste por índice..."):
             reajuste_perf, reajuste_meta = _build_reajuste_dataset(
                 perf_df,
                 str(incc_series_path),
                 reajuste_target_months,
                 REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
+                extra_index_sources=extra_index_sources,
             )
-    except Exception as exc:
-        reajuste_error = f"Falha ao preparar reajuste INCC: {exc}"
-else:
-    reajuste_error = "Arquivo de INCC (assets/INCC_Series_MeDI.xlsx) não encontrado."
+    else:
+        reajuste_perf, reajuste_meta = _build_reajuste_dataset(
+            perf_df,
+            str(incc_series_path),
+            reajuste_target_months,
+            REAJUSTE_BASE_DATE.strftime("%Y-%m-%d"),
+            extra_index_sources=extra_index_sources,
+        )
+except Exception as exc:
+    reajuste_error = f"Falha ao preparar reajuste por índice: {exc}"
+
+if not reajuste_error and not reajuste_meta.get("available_indices"):
+    reajuste_error = (
+        "Nenhum arquivo de índice encontrado em assets "
+        "(INCC, IPCA ou IGP-DI)."
+    )
 
 latest_record = pd.DataFrame(columns=["__registro_id"])
 if not perf_df.empty and "MesData" in perf_df.columns:
@@ -710,10 +732,10 @@ else:
             )
             st.altair_chart((bar + line).properties(height=320), width="stretch")
 
-st.subheader("Reajuste INCC-DI (agregado pelos filtros)")
+st.subheader("Reajuste por índice (agregado pelos filtros)")
 st.caption(
     "Cada ponto usa o VGV Oferta Final do próprio mês. "
-    "O reajuste aplica fator até a base fixa de dezembro/2025 usando INCC-DI."
+    "Use o seletor para exibir somente as linhas de índices desejadas."
 )
 
 if reajuste_error:
@@ -721,89 +743,148 @@ if reajuste_error:
 elif filtered_reajuste.empty:
     st.info("Sem dados de reajuste para os filtros atuais.")
 else:
+    corrected_columns = [
+        f"VGV Corrigido {index_name}"
+        for index_name in REAJUSTE_INDEX_ORDER
+        if f"VGV Corrigido {index_name}" in filtered_reajuste.columns
+    ]
+    agg_map: dict[str, str] = {"VGV Nominal": "sum"}
+    for corrected_col in corrected_columns:
+        agg_map[corrected_col] = "sum"
+
     reajuste_monthly = (
         filtered_reajuste.groupby(["Mes", "MesData"], as_index=False)
-        .agg(
-            {
-                "VGV Nominal": "sum",
-                "VGV Corrigido INCC-DI": "sum",
-            }
-        )
+        .agg(agg_map)
         .sort_values("MesData")
     )
 
-    reference_row = reajuste_monthly.iloc[-1]
-    reference_month_label = str(reference_row.get("Mes", "-"))
-    start_month_label = str(reajuste_monthly.iloc[0].get("Mes", "-"))
+    if reajuste_monthly.empty:
+        st.info("Sem dados de reajuste para os filtros atuais.")
+    else:
+        reference_row = reajuste_monthly.iloc[-1]
+        reference_month_label = str(reference_row.get("Mes", "-"))
+        start_month_label = str(reajuste_monthly.iloc[0].get("Mes", "-"))
 
-    target_label = (
-        filtered_empreendimentos[0]
-        if len(filtered_empreendimentos) == 1
-        else f"{len(filtered_empreendimentos)} (filtros)"
-    )
+        target_label = (
+            filtered_empreendimentos[0]
+            if len(filtered_empreendimentos) == 1
+            else f"{len(filtered_empreendimentos)} (filtros)"
+        )
 
-    current_ref_di = reference_row.get("VGV Corrigido INCC-DI")
+        available_index_options = []
+        for index_name in REAJUSTE_INDEX_ORDER:
+            corrected_col = f"VGV Corrigido {index_name}"
+            if corrected_col not in reajuste_monthly.columns:
+                continue
+            has_values = pd.to_numeric(reajuste_monthly[corrected_col], errors="coerce").notna().any()
+            if has_values:
+                available_index_options.append(index_name)
 
-    r1, r2, r3 = st.columns(3)
-    r1.metric("Empreendimento", target_label)
-    r2.metric("Nominal (mês ref)", _format_brl_compact(reference_row.get("VGV Nominal")))
-    r3.metric("Corrigido DI (mês ref)", _format_brl_compact(current_ref_di))
+        default_selected_indices = ["INCC-DI"] if "INCC-DI" in available_index_options else available_index_options[:1]
+        current_selected_indices = st.session_state.get(REAJUSTE_INDEX_WIDGET_KEY, [])
+        if not isinstance(current_selected_indices, list):
+            current_selected_indices = []
+        current_selected_indices = [name for name in current_selected_indices if name in available_index_options]
+        if not current_selected_indices:
+            current_selected_indices = default_selected_indices
+        st.session_state[REAJUSTE_INDEX_WIDGET_KEY] = current_selected_indices
 
-    base_di_date = reajuste_meta.get("base_di_date")
-    base_di_label = base_di_date.strftime("%m/%Y") if isinstance(base_di_date, pd.Timestamp) else "-"
-    st.caption(
-        f"Série exibida: {start_month_label} até {reference_month_label} | "
-        f"Base INCC-DI usada: {base_di_label}"
-    )
-
-    with st.expander("Resumo metodológico do reajuste", expanded=False):
-        st.markdown(
-            "\n".join(
-                [
-                    "**Métricas exibidas**",
-                    "- Empreendimento: 1 nome selecionado ou N (filtros).",
-                    "- Nominal (mês ref): soma do VGV Oferta Final no último mês da série exibida.",
-                    "- Corrigido DI (mês ref): nominal do mês de referência atualizado para a base 12/2025.",
-                    "",
-                    "**Índice adotado**",
-                    "- O app usa INCC-DI como padrão único para reajuste.",
-                    "- Motivo: alinhamento mensal com a série da planilha e padronização da leitura executiva.",
-                    "",
-                    "**Cálculo aplicado**",
-                    "- Método por índice direto: VGV_corrigido = VGV_nominal * (Indice_base / Indice_mes).",
-                    "- Forma equivalente por variação mês a mês: encadeamento dos fatores mensais até a base.",
-                    "- Com a mesma série/base de INCC-DI, os dois métodos são matematicamente equivalentes.",
-                ]
+        if available_index_options:
+            st.multiselect(
+                "Linhas de reajuste por índice",
+                options=available_index_options,
+                key=REAJUSTE_INDEX_WIDGET_KEY,
             )
-        )
+        else:
+            st.info("Nenhum índice disponível para exibição no recorte atual.")
 
-    reajuste_plot = reajuste_monthly.melt(
-        id_vars=["Mes", "MesData"],
-        value_vars=["VGV Nominal", "VGV Corrigido INCC-DI"],
-        var_name="Serie",
-        value_name="Valor",
-    )
-    reajuste_plot["Valor"] = pd.to_numeric(reajuste_plot["Valor"], errors="coerce")
-    reajuste_plot = reajuste_plot.dropna(subset=["Valor"])
-    reajuste_plot["Serie"] = reajuste_plot["Serie"].astype(str).replace(
-        {
-            "VGV Nominal": "VGV Oferta Final (nominal)",
-            "VGV Corrigido INCC-DI": "VGV corrigido (INCC-DI)",
+        selected_indices = [name for name in st.session_state.get(REAJUSTE_INDEX_WIDGET_KEY, []) if name in available_index_options]
+        metric_label_map = {
+            "INCC-DI": "Corrigido INCC-DI (mês ref)",
+            "IPCA": "Corrigido IPCA (mês ref)",
+            "IGP-DI": "Corrigido IGP-DI (mês ref)",
         }
-    )
 
-    reajuste_chart = (
-        alt.Chart(reajuste_plot)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("MesData:T", title="Mês"),
-            y=alt.Y("Valor:Q", title="VGV (R$)"),
-            color=alt.Color("Serie:N", title="Serie"),
-            tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
+        metric_columns = st.columns(2 + len(selected_indices))
+        metric_columns[0].metric("Empreendimento", target_label)
+        metric_columns[1].metric("Nominal (mês ref)", _format_brl_compact(reference_row.get("VGV Nominal")))
+        for idx, index_name in enumerate(selected_indices):
+            metric_columns[idx + 2].metric(
+                metric_label_map.get(index_name, f"Corrigido {index_name} (mês ref)"),
+                _format_brl_compact(reference_row.get(f"VGV Corrigido {index_name}")),
+            )
+
+        base_dates = reajuste_meta.get("base_dates", {})
+        base_labels = []
+        for index_name in selected_indices:
+            base_date = base_dates.get(index_name)
+            if isinstance(base_date, pd.Timestamp):
+                base_labels.append(f"{index_name}: {base_date.strftime('%m/%Y')}")
+
+        caption_text = f"Série exibida: {start_month_label} até {reference_month_label}"
+        if base_labels:
+            caption_text += " | Base usada: " + " | ".join(base_labels)
+        st.caption(caption_text)
+
+        missing_indices = [
+            index_name
+            for index_name in reajuste_meta.get("missing_indices", [])
+            if index_name in REAJUSTE_INDEX_ORDER
+        ]
+        if missing_indices:
+            st.caption("Índices indisponíveis no assets: " + ", ".join(missing_indices))
+
+        with st.expander("Resumo metodológico do reajuste", expanded=False):
+            st.markdown(
+                "\n".join(
+                    [
+                        "**Métricas exibidas**",
+                        "- Empreendimento: 1 nome selecionado ou N (filtros).",
+                        "- Nominal (mês ref): soma do VGV Oferta Final no último mês da série exibida.",
+                        "- Corrigidos (mês ref): nominais atualizados para base 12/2025 conforme índices selecionados.",
+                        "",
+                        "**Índices disponíveis**",
+                        "- O seletor permite mostrar/ocultar INCC-DI, IPCA e IGP-DI.",
+                        "- Por padrão, o gráfico inicia com INCC-DI selecionado.",
+                        "",
+                        "**Cálculo aplicado**",
+                        "- Método por índice direto: VGV_corrigido = VGV_nominal * (Indice_base / Indice_mes).",
+                        "- O mesmo método é aplicado para cada índice disponível no assets.",
+                    ]
+                )
+            )
+
+        selected_value_vars = [
+            f"VGV Corrigido {index_name}"
+            for index_name in selected_indices
+            if f"VGV Corrigido {index_name}" in reajuste_monthly.columns
+        ]
+        series_labels = {"VGV Nominal": "VGV Oferta Final (nominal)"}
+        for index_name in selected_indices:
+            series_labels[f"VGV Corrigido {index_name}"] = f"VGV corrigido ({index_name})"
+
+        reajuste_plot = reajuste_monthly.melt(
+            id_vars=["Mes", "MesData"],
+            value_vars=["VGV Nominal"] + selected_value_vars,
+            var_name="Serie",
+            value_name="Valor",
         )
-        .properties(height=320)
-    )
-    st.altair_chart(reajuste_chart, width="stretch")
+        reajuste_plot["Valor"] = pd.to_numeric(reajuste_plot["Valor"], errors="coerce")
+        reajuste_plot = reajuste_plot.dropna(subset=["Valor"])
+        reajuste_plot["Serie"] = reajuste_plot["Serie"].astype(str).replace(series_labels)
+
+        reajuste_chart = (
+            alt.Chart(reajuste_plot)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("MesData:T", title="Mês"),
+                y=alt.Y("Valor:Q", title="VGV (R$)"),
+                color=alt.Color("Serie:N", title="Serie"),
+                tooltip=["Mes", "Serie", alt.Tooltip("Valor:Q", format=",.2f")],
+            )
+            .properties(height=320)
+        )
+        st.altair_chart(reajuste_chart, width="stretch")
 
 # Ficha + amenidades apenas quando houver 1 empreendimento no filtro
 if len(filtered_empreendimentos) != 1:
