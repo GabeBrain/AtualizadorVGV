@@ -26,7 +26,7 @@ from src.vgv_core import (
     status_color as core_status_color,
     to_excel_bytes as core_to_excel_bytes,
 )
-from src.vgv_parser import extract_present_amenities, parse_vgv_workbook
+from src.vgv_parser import extract_present_amenities, normalize_text, parse_vgv_workbook
 
 APP_NAME = "Atualizador de VGV"
 REAJUSTE_BASE_DATE = pd.Timestamp("2025-12-01")
