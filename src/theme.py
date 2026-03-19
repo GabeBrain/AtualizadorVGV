@@ -4,10 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-_NAV_ITEMS: list[tuple[str, str]] = [
-    ("app.py", "Atualizador de VGV"),
-    ("pages/1_Comparador_Indices.py", "Comparador de \u00cdndices"),
-]
+_NAV_ITEMS: list[tuple[str, str]] = []
 
 _THEME_CSS = """
 <style>

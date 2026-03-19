@@ -5,7 +5,6 @@ Starter Streamlit para analise de arquivos Excel, com foco em:
 - analise temporal e espacial em pagina unica (nativa)
 - filtros, KPIs e series mensais
 - calculo e exportacao de reajuste INCC-DI
-- menu com duas paginas: Atualizador de VGV e Comparador de Indices
 - padrao visual Brain (tokens e CSS centralizados)
 
 ## Rodar localmente
@@ -21,8 +20,6 @@ streamlit run app.py
 
 ```text
 app.py
-pages/
-  1_Comparador_Indices.py
 src/
   theme.py
   io_excel.py
