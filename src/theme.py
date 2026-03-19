@@ -4,8 +4,6 @@ from pathlib import Path
 
 import streamlit as st
 
-_NAV_ITEMS: list[tuple[str, str]] = []
-
 _THEME_CSS = """
 <style>
     :root {
@@ -25,6 +23,11 @@ _THEME_CSS = """
         color: var(--ink);
     }
 
+    [data-testid="stSidebar"],
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+
     .block-container {
         padding-top: 1.1rem;
         padding-bottom: 1.2rem;
@@ -41,14 +44,6 @@ _THEME_CSS = """
     [data-testid="stMetricLabel"] {
         color: var(--muted);
         font-weight: 600;
-    }
-
-    [data-testid="stSidebar"] {
-        border-right: 1px solid var(--line);
-    }
-
-    [data-testid="stSidebarNav"] [data-testid="stSidebarNavLinkLabel"] {
-        line-height: 1.2;
     }
 
     [data-testid="stFileUploader"] section {
@@ -109,44 +104,20 @@ def _resolve_logo_path() -> str | None:
     return None
 
 
-def _available_nav_items() -> list[tuple[str, str]]:
-    root = Path(__file__).resolve().parents[1]
-    available: list[tuple[str, str]] = []
-    for page_path, label in _NAV_ITEMS:
-        if (root / page_path).exists():
-            available.append((page_path, label))
-    return available
-
-
 def apply_brain_theme() -> None:
     """Apply shared CSS tokens and component styling."""
     st.markdown(_THEME_CSS, unsafe_allow_html=True)
 
 
 def render_sidebar_menu() -> None:
-    """Render sidebar branding and manual navigation links."""
+    """Render app branding without sidebar navigation."""
     logo_path = _resolve_logo_path()
-    nav_items = _available_nav_items()
+    if not logo_path:
+        return
 
-    with st.sidebar:
-        if logo_path:
-            try:
-                st.logo(logo_path, size="large")
-            except Exception:
-                st.image(logo_path, width=112)
-
-        sidebar_page_link = getattr(st.sidebar, "page_link", None)
-
-        for page_path, label in nav_items:
-            if callable(sidebar_page_link):
-                try:
-                    st.page_link(page_path, label=label)
-                    continue
-                except Exception:
-                    pass
-
-            if st.button(label, width="stretch", key=f"nav_{page_path}"):
-                try:
-                    st.switch_page(page_path)
-                except Exception:
-                    pass
+    try:
+        st.logo(logo_path, size="large")
+    except Exception:
+        left, _ = st.columns([1, 7])
+        with left:
+            st.image(logo_path, width=112)
