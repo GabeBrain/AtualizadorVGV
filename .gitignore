@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
+
+# Materiais brutos e temporarios locais; registrar decisoes e derivados versionaveis.
+/.local-inputs/
